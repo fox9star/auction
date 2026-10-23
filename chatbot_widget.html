@@ -1,0 +1,1784 @@
+<!-- ================================================================== -->
+<!-- 경매 AI 상담 챗봇 위젯 (build_portal.py 실행 시 index.html에 자동 삽입) -->
+<!--  - 로컬 엔진: 내장 데이터 기반 물건 검색/비교/비용계산/용어설명 (오프라인)  -->
+<!--  - AI 모드(선택): Gemini API 키 입력 시 자유 질문을 생성형 AI가 답변       -->
+<!-- ================================================================== -->
+<style>
+  #cb-fab { position:fixed; right:24px; bottom:24px; width:62px; height:62px; border-radius:50%;
+    background:linear-gradient(135deg,#319795,#2b6cb0); color:#fff; border:none; font-size:1.7rem; cursor:pointer;
+    box-shadow:0 6px 20px rgba(0,0,0,.25); z-index:900; transition:transform .2s; }
+  #cb-fab:hover { transform:scale(1.08); }
+  #cb-fab .cb-dot { position:absolute; top:5px; right:5px; width:14px; height:14px; background:#e53e3e; border:2px solid #fff; border-radius:50%; }
+  #cb-panel { position:fixed; right:24px; bottom:100px; width:430px; max-width:calc(100vw - 32px); height:660px; max-height:calc(100vh - 130px);
+    background:#fff; border-radius:16px; box-shadow:0 12px 40px rgba(0,0,0,.25); display:none; flex-direction:column; overflow:hidden;
+    z-index:900; border:1px solid #e2e8f0; transition:width .22s ease, height .22s ease, right .22s ease, bottom .22s ease, top .22s ease, left .22s ease, border-radius .22s ease; }
+  #cb-panel.open { display:flex; animation:cbUp .2s ease-out; }
+  #cb-panel.maximized { right:18px; left:18px; top:18px; bottom:18px; width:auto; max-width:none; height:auto; max-height:none; z-index:960; border-radius:14px; }
+  #cb-panel.maximized #cb-body { padding:20px 28px; }
+  #cb-panel.maximized .cb-msg { max-width:82%; font-size:.92rem; }
+  #cb-panel.maximized .cb-bot table { font-size:.84rem; }
+  @keyframes cbUp { from { transform:translateY(16px); opacity:0; } to { transform:none; opacity:1; } }
+  .cb-head { background:linear-gradient(135deg,#1a365d,#2b6cb0); color:#fff; padding:13px 14px; display:flex; align-items:center; gap:8px; user-select:none; }
+  .cb-avatar { width:36px; height:36px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; font-size:1.15rem; flex-shrink:0; }
+  .cb-title { flex:1; min-width:0; }
+  .cb-title b { display:block; font-size:.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cb-title small { font-size:.7rem; color:#cbd5e0; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cb-mode { font-size:.66rem; padding:2px 7px; border-radius:10px; background:rgba(255,255,255,.2); margin-left:4px; font-weight:600; }
+  .cb-mode.ai { background:#38b2ac; }
+  .cb-icon-btn { background:rgba(255,255,255,.15); border:none; color:#fff; width:30px; height:30px; border-radius:8px; cursor:pointer; font-size:.9rem; flex-shrink:0; transition:background .15s; }
+  .cb-icon-btn:hover { background:rgba(255,255,255,.3); }
+  .cb-size-btn { width:auto; padding:0 9px; font-size:.75rem; font-weight:700; display:inline-flex; align-items:center; gap:3px; white-space:nowrap; }
+  #cb-settings { display:none; background:#f7fafc; border-bottom:1px solid #e2e8f0; padding:12px 14px; font-size:.8rem; }
+  #cb-settings.open { display:block; }
+  #cb-settings label { display:block; font-weight:700; color:#4a5568; margin:7px 0 3px; }
+  #cb-settings input[type=text], #cb-settings input[type=password] { width:100%; padding:7px 9px; border:1px solid #cbd5e0; border-radius:6px; font-size:.8rem; }
+  #cb-settings .row { display:flex; gap:6px; margin-top:8px; align-items:center; }
+  #cb-settings p { color:#718096; font-size:.71rem; margin-top:7px; line-height:1.45; }
+  #cb-body { flex:1; overflow-y:auto; padding:14px; background:#f7fafc; display:flex; flex-direction:column; gap:10px; }
+  .cb-msg { max-width:90%; padding:10px 13px; border-radius:14px; font-size:.86rem; line-height:1.55; word-break:break-word; }
+  .cb-bot { background:#fff; border:1px solid #e2e8f0; align-self:flex-start; border-top-left-radius:4px; }
+  .cb-user { background:#2b6cb0; color:#fff; align-self:flex-end; border-top-right-radius:4px; white-space:pre-wrap; }
+  .cb-bot h5 { font-size:.9rem; color:#1a365d; margin:2px 0 6px; }
+  .cb-bot p { margin:4px 0; }
+  .cb-bot ul, .cb-bot ol { margin:4px 0 4px 18px; }
+  .cb-bot li { margin:2px 0; }
+  .cb-bot table { border-collapse:collapse; width:100%; font-size:.76rem; margin:6px 0; }
+  .cb-bot th, .cb-bot td { border:1px solid #e2e8f0; padding:4px 6px; text-align:left; vertical-align:top; }
+  .cb-bot th { background:#edf2f7; white-space:nowrap; }
+  .cb-bot a { color:#2b6cb0; font-weight:600; }
+  .cb-bot code { background:#edf2f7; padding:0 4px; border-radius:3px; font-size:.8rem; }
+  .cb-note { font-size:.71rem; color:#718096; margin-top:6px; border-top:1px dashed #e2e8f0; padding-top:5px; }
+  .cb-crit { font-size:.74rem; background:#ebf8ff; color:#2c5282; padding:5px 8px; border-radius:6px; margin-bottom:6px; }
+  .cb-item { border:1px solid #e2e8f0; border-radius:10px; padding:8px 10px; margin:6px 0; cursor:pointer; background:#fcfdfe; transition:border-color .15s, background .15s; }
+  .cb-item:hover { border-color:#2b6cb0; background:#ebf8ff; }
+  .cb-item .t { font-weight:700; color:#1a365d; font-size:.81rem; }
+  .cb-item .m { font-size:.74rem; color:#4a5568; margin-top:3px; }
+  .cb-item .p { font-size:.8rem; margin-top:3px; }
+  .cb-item .p b { color:#e53e3e; }
+  .cb-tag { display:inline-block; font-size:.66rem; padding:1px 6px; border-radius:4px; margin-right:3px; font-weight:700; }
+  .cb-tag.s { background:#fefcbf; color:#744210; } .cb-tag.d { background:#fff5f5; color:#e53e3e; }
+  .cb-tag.r { background:#f0fff4; color:#38a169; } .cb-tag.w { background:#fffaf0; color:#c05621; } .cb-tag.x { background:#edf2f7; color:#4a5568; }
+  .cb-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .cb-chip { background:#ebf8ff; color:#2b6cb0; border:1px solid #bee3f8; border-radius:14px; padding:4px 10px; font-size:.75rem; cursor:pointer; font-weight:600; font-family:inherit; }
+  .cb-chip:hover { background:#2b6cb0; color:#fff; }
+  .cb-typing span { display:inline-block; width:7px; height:7px; background:#a0aec0; border-radius:50%; margin:0 2px; animation:cbB 1s infinite; }
+  .cb-typing span:nth-child(2) { animation-delay:.15s; } .cb-typing span:nth-child(3) { animation-delay:.3s; }
+  @keyframes cbB { 0%,80%,100% { transform:translateY(0); opacity:.5; } 40% { transform:translateY(-5px); opacity:1; } }
+  #cb-suggest { display:flex; gap:6px; overflow-x:auto; padding:8px 12px; border-top:1px solid #e2e8f0; background:#fff; scrollbar-width:thin; }
+  #cb-suggest .cb-chip { white-space:nowrap; flex-shrink:0; }
+  .cb-input-row { display:flex; gap:8px; padding:10px 12px; border-top:1px solid #e2e8f0; background:#fff; }
+  #cb-input { flex:1; resize:none; border:2px solid #e2e8f0; border-radius:10px; padding:9px 11px; font-size:.87rem; font-family:inherit; max-height:90px; outline:none; }
+  #cb-input:focus { border-color:#2b6cb0; }
+  #cb-send { background:#2b6cb0; color:#fff; border:none; border-radius:10px; padding:0 16px; font-weight:700; cursor:pointer; font-family:inherit; }
+  #cb-send:disabled { background:#a0aec0; cursor:default; }
+  /* 다크모드 대응 */
+  html[data-theme="dark"] #cb-panel { background:#1e293b; border-color:#334155; color:#f1f5f9; }
+  html[data-theme="dark"] #cb-settings { background:#0f172a; border-color:#334155; color:#f1f5f9; }
+  html[data-theme="dark"] #cb-settings label { color:#cbd5e1; }
+  html[data-theme="dark"] #cb-settings input[type=text],
+  html[data-theme="dark"] #cb-settings input[type=password] { background:#1e293b; border-color:#475569; color:#f1f5f9; }
+  html[data-theme="dark"] #cb-body { background:#0f172a; }
+  html[data-theme="dark"] .cb-bot { background:#1e293b; border-color:#334155; color:#f1f5f9; }
+  html[data-theme="dark"] .cb-bot h5 { color:#93c5fd; }
+  html[data-theme="dark"] .cb-bot th, html[data-theme="dark"] .cb-bot td { border-color:#334155; }
+  html[data-theme="dark"] .cb-bot th { background:#0f172a; color:#e2e8f0; }
+  html[data-theme="dark"] .cb-bot a { color:#60a5fa; }
+  html[data-theme="dark"] .cb-bot code { background:#0f172a; color:#93c5fd; }
+  html[data-theme="dark"] .cb-note { color:#94a3b8; border-top-color:#334155; }
+  html[data-theme="dark"] .cb-crit { background:rgba(59,130,246,.18); color:#93c5fd; }
+  html[data-theme="dark"] .cb-item { background:#162032; border-color:#334155; }
+  html[data-theme="dark"] .cb-item:hover { background:#1e3a5f; border-color:#60a5fa; }
+  html[data-theme="dark"] .cb-item .t { color:#93c5fd; }
+  html[data-theme="dark"] .cb-item .m { color:#94a3b8; }
+  html[data-theme="dark"] .cb-item .p b { color:#f87171; }
+  html[data-theme="dark"] .cb-tag.s { background:rgba(251,191,36,.2); color:#fde68a; }
+  html[data-theme="dark"] .cb-tag.d { background:rgba(239,68,68,.2); color:#fca5a5; }
+  html[data-theme="dark"] .cb-tag.r { background:rgba(34,197,94,.2); color:#86efac; }
+  html[data-theme="dark"] .cb-tag.w { background:rgba(249,115,22,.2); color:#fdba74; }
+  html[data-theme="dark"] .cb-tag.x { background:#334155; color:#e2e8f0; }
+  html[data-theme="dark"] .cb-chip { background:rgba(59,130,246,.16); color:#93c5fd; border-color:rgba(96,165,250,.35); }
+  html[data-theme="dark"] .cb-chip:hover { background:#3b82f6; color:#fff; }
+  html[data-theme="dark"] #cb-suggest, html[data-theme="dark"] .cb-input-row { background:#1e293b; border-color:#334155; }
+  html[data-theme="dark"] #cb-input { background:#0f172a; border-color:#334155; color:#f1f5f9; }
+  html[data-theme="dark"] #cb-input:focus { border-color:#60a5fa; }
+  /* 상세 모달 하단 1:1 물건 전담 챗봇창 영역 */
+  .modal-chat-section { background:#ffffff; border:2px solid #2b6cb0; border-radius:12px; overflow:hidden; margin-top:6px; box-shadow:0 6px 20px rgba(26,54,93,0.12); display:flex; flex-direction:column; }
+  .modal-chat-head { background:linear-gradient(135deg,#1a365d 0%,#2b6cb0 100%); color:#fff; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  .modal-chat-title { display:flex; align-items:center; gap:9px; min-width:0; }
+  .modal-chat-avatar { width:32px; height:32px; border-radius:50%; background:rgba(255,255,255,0.18); display:inline-flex; align-items:center; justify-content:center; font-size:1.05rem; flex-shrink:0; }
+  .modal-chat-title b { font-size:.88rem; color:#fff; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .modal-chat-title small { display:block; font-size:.73rem; color:rgba(255,255,255,0.82); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:380px; }
+  .modal-chat-badge { font-size:.68rem; padding:2px 7px; border-radius:999px; background:#38a169; color:#fff; font-weight:700; }
+  .modal-chat-ctrl { display:flex; align-items:center; gap:5px; }
+  .modal-chat-ctrl-btn { background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.28); color:#fff; border-radius:6px; padding:4px 8px; font-size:.73rem; font-weight:700; cursor:pointer; white-space:nowrap; transition:background .15s; }
+  .modal-chat-ctrl-btn:hover { background:rgba(255,255,255,0.28); }
+  .modal-chat-log { display:flex; flex-direction:column; gap:8px; min-height:145px; max-height:215px; overflow-y:auto; padding:12px 14px; background:#f1f5f9; border-bottom:1px solid #e2e8f0; transition:max-height .2s ease; }
+  .modal-chat-section.expanded .modal-chat-log { max-height:430px; }
+  .modal-chat-log .cb-msg { max-width:96%; }
+  .modal-chat-chips { display:flex; flex-wrap:wrap; gap:5px; padding:8px 12px; background:#f8fafc; border-bottom:1px solid #e2e8f0; }
+  .modal-chat-input-row { display:flex; gap:8px; padding:9px 12px; background:#fff; }
+  .modal-chat-input { flex:1; padding:9px 12px; border:1px solid #cbd5e0; border-radius:8px; font-size:.85rem; background:#fff; color:#2d3748; outline:none; }
+  .modal-chat-input:focus { border-color:#2b6cb0; box-shadow:0 0 0 2px rgba(43,108,176,0.15); }
+  .modal-chat-send { background:linear-gradient(135deg,#1a365d,#2b6cb0); color:#fff; border:none; border-radius:8px; padding:0 16px; font-size:.84rem; font-weight:700; cursor:pointer; white-space:nowrap; }
+  .modal-chat-send:hover { filter:brightness(1.08); }
+  html[data-theme="dark"] .modal-chat-section { background:#1e293b; border-color:#3b82f6; }
+  html[data-theme="dark"] .modal-chat-head { background:linear-gradient(135deg,#0f172a,#1e3a8a); }
+  html[data-theme="dark"] .modal-chat-log { background:#0b1120; border-bottom-color:#334155; }
+  html[data-theme="dark"] .modal-chat-chips { background:#162032; border-bottom-color:#334155; }
+  html[data-theme="dark"] .modal-chat-input-row { background:#1e293b; }
+  html[data-theme="dark"] .modal-chat-input { background:#0f172a; border-color:#475569; color:#f1f5f9; }
+  html[data-theme="dark"] .modal-chat-input:focus { border-color:#60a5fa; }
+  /* 그레이모드 대응 */
+  html[data-theme="gray"] #cb-panel { background:#e5e7eb; border-color:#b8c1cc; color:#1f2937; }
+  html[data-theme="gray"] .cb-head { background:linear-gradient(135deg,#374151,#4b5563); }
+  html[data-theme="gray"] #cb-settings { background:#d6dce3; border-color:#b8c1cc; color:#1f2937; }
+  html[data-theme="gray"] #cb-settings input[type=text],
+  html[data-theme="gray"] #cb-settings input[type=password] { background:#f3f4f6; border-color:#9ca3af; color:#1f2937; }
+  html[data-theme="gray"] #cb-body { background:#d6dce3; }
+  html[data-theme="gray"] .cb-bot { background:#eef0f4; border-color:#b8c1cc; color:#1f2937; }
+  html[data-theme="gray"] .cb-bot h5 { color:#1f2937; }
+  html[data-theme="gray"] .cb-bot th, html[data-theme="gray"] .cb-bot td { border-color:#b8c1cc; }
+  html[data-theme="gray"] .cb-bot th { background:#d1d5db; color:#1f2937; }
+  html[data-theme="gray"] .cb-crit { background:#cbd5e1; color:#1e293b; }
+  html[data-theme="gray"] .cb-item { background:#e5e7eb; border-color:#b8c1cc; }
+  html[data-theme="gray"] .cb-item:hover { background:#d1d5db; border-color:#4b5563; }
+  html[data-theme="gray"] .cb-chip { background:#d1d5db; color:#1f2937; border-color:#9ca3af; }
+  html[data-theme="gray"] .cb-chip:hover { background:#374151; color:#fff; }
+  html[data-theme="gray"] #cb-suggest, html[data-theme="gray"] .cb-input-row { background:#e5e7eb; border-color:#b8c1cc; }
+  html[data-theme="gray"] #cb-input { background:#f3f4f6; border-color:#9ca3af; color:#1f2937; }
+  html[data-theme="gray"] .modal-chat-section { background:#e5e7eb; border-color:#4b5563; }
+  html[data-theme="gray"] .modal-chat-head { background:linear-gradient(135deg,#374151,#4b5563); }
+  html[data-theme="gray"] .modal-chat-log { background:#d6dce3; border-bottom-color:#b8c1cc; }
+  html[data-theme="gray"] .modal-chat-chips { background:#dde2e8; border-bottom-color:#b8c1cc; }
+  html[data-theme="gray"] .modal-chat-input-row { background:#e5e7eb; }
+  html[data-theme="gray"] .modal-chat-input { background:#f3f4f6; border-color:#9ca3af; color:#1f2937; }
+  @media (max-width:520px) {
+    #cb-panel { right:8px; left:8px; width:auto; max-width:none; bottom:88px; height:calc(100vh - 104px); max-height:none; }
+    #cb-panel.maximized { right:0; left:0; top:0; bottom:0; height:100vh; border-radius:0; }
+    #cb-fab { right:16px; bottom:16px; }
+  }
+</style>
+
+<button id="cb-fab" title="경매 AI 상담봇 열기" aria-label="경매 AI 상담봇 열기">💬<span class="cb-dot"></span></button>
+
+<div id="cb-panel" role="dialog" aria-label="경매 AI 상담봇">
+  <div class="cb-head">
+    <div class="cb-avatar">⚖️</div>
+    <div class="cb-title">
+      <b>경매 AI 상담봇 <span class="cb-mode" id="cb-mode-label">로컬 모드</span></b>
+      <small>물건 검색 · 비교 · 입찰비용 계산 · 권리분석 용어</small>
+    </div>
+    <button class="cb-icon-btn" data-act="theme" title="라이트/다크 모드 전환">🌓</button>
+    <button class="cb-icon-btn" data-act="settings" title="AI 연동 설정">⚙️</button>
+    <button class="cb-icon-btn" data-act="reset" title="대화 초기화">🔄</button>
+    <button class="cb-icon-btn cb-size-btn" id="cb-max-btn" data-act="maximize" title="챗봇창 최대화" aria-label="챗봇창 최대화">⤢ 최대화</button>
+    <button class="cb-icon-btn" data-act="close" title="닫기">✕</button>
+  </div>
+  <div id="cb-settings">
+    <b>🤖 생성형 AI(Gemini) 연동 — 선택 사항</b>
+    <label for="cb-key">Gemini API 키</label>
+    <input type="password" id="cb-key" placeholder="AIza... (이 브라우저에만 저장)" autocomplete="off">
+    <label for="cb-model">모델명</label>
+    <input type="text" id="cb-model" value="gemini-2.5-flash">
+    <div class="row"><input type="checkbox" id="cb-use-ai"><label for="cb-use-ai" style="margin:0;font-weight:600;">AI 모드 사용 (로컬 엔진이 처리하지 못한 자유 질문을 AI가 답변)</label></div>
+    <div class="row">
+      <button class="cb-chip" data-act="save-settings">💾 저장</button>
+      <button class="cb-chip" data-act="clear-key">🗑 키 삭제</button>
+    </div>
+    <p>※ 키 없이도 내장 로컬 엔진으로 물건 검색·비교·비용 계산·용어 설명이 모두 동작합니다.<br>
+       ※ 키는 이 브라우저의 localStorage에만 저장되며 Google Gemini API 호출에만 사용됩니다. 공용 PC에서는 사용 후 꼭 삭제하세요.</p>
+  </div>
+  <div id="cb-body" aria-live="polite"></div>
+  <div id="cb-suggest"></div>
+  <div class="cb-input-row">
+    <textarea id="cb-input" rows="1" placeholder="예) 유성구 아파트 1억 이하 추천해줘"></textarea>
+    <button id="cb-send">전송</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ------------------------------------------------------------------ */
+  /* 0. 데이터 & 공통 유틸                                                 */
+  /* ------------------------------------------------------------------ */
+  var DATA = (typeof rawData !== 'undefined') ? rawData : (typeof window !== 'undefined' && window.rawData) || [];
+  var TODAY = new Date(); TODAY.setHours(0, 0, 0, 0);
+  var PAGE = 5;
+  var S = { all: [], shown: 0, crit: null, lastQ: '', history: [], busy: false, focusItem: null };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function won(n) {
+    n = Math.round(Number(n) || 0);
+    if (n >= 1e8) {
+      var e = Math.floor(n / 1e8), m = Math.round((n % 1e8) / 1e4);
+      return e + '억' + (m ? ' ' + m.toLocaleString() + '만' : '') + '원';
+    }
+    if (n >= 1e4) return Math.round(n / 1e4).toLocaleString() + '만원';
+    return n.toLocaleString() + '원';
+  }
+  function yuchalN(it) { var m = String(it.yuchal || '').match(/\d+/); return m ? parseInt(m[0], 10) : 0; }
+  function dateOf(it) { var d = new Date(String(it.date) + 'T00:00:00'); return isNaN(d.getTime()) ? null : d; }
+  function isPast(it) { var d = dateOf(it); return !!d && d < TODAY; }
+  function isRisky(it) { var r = String(it.risk || '').replace(/소멸주의/g, ''); return /주의|위험|지분|유치|법정지상/.test(r); }
+  function cut(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n) + '…' : s; }
+  function cleanSpec(s) { return String(s || '').replace(/[\[\]]/g, '').replace(/\s+/g, ' ').trim(); }
+  function fmtDate(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function stripHtml(h) { return String(h).replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function catCount(cat) { return DATA.filter(function (d) { return d.category === cat; }).length; }
+
+  /* ------------------------------------------------------------------ */
+  /* 1. 어휘 사전                                                          */
+  /* ------------------------------------------------------------------ */
+  var GROUPS = [
+    [/수도권/, '수도권'], [/영남권?|부울경|대경권/, '영남'], [/충청권/, '충청'], [/호남권?/, '호남'],
+    [/강원\s*[·ㆍ.,]?\s*제주권?|강원권|제주권/, '강원·제주']
+  ];
+  var GU = [[/유성구|유성/, '유성구'], [/대덕구|대덕/, '대덕구'], [/서구/, '서구'], [/중구/, '중구'], [/동구/, '동구']];
+  var SIDO = [
+    [/서울/, '서울'], [/경기/, '경기'], [/인천/, '인천'], [/부산/, '부산'], [/대구/, '대구'], [/광주/, '광주'],
+    [/대전/, '대전'], [/울산/, '울산'], [/세종/, '세종'], [/강원/, '강원'], [/제주/, '제주'],
+    [/충북|충청북도?/, '충청북'], [/충남|충청남도?/, '충청남'], [/전북|전라북도?/, '전북'], [/전남|전라남도?/, '전라남'],
+    [/경북|경상북도?/, '경상북'], [/경남|경상남도?/, '경상남']
+  ];
+  var USAGE = [
+    [/아파트|주상복합/, function (it) { return /아파트|주상복합/.test(it.usage); }, '아파트'],
+    [/오피스텔/, function (it) { return /오피스텔/.test(it.usage); }, '오피스텔'],
+    [/빌라|다세대|연립/, function (it) { return /다세대|연립|빌라/.test(it.usage); }, '다세대·빌라'],
+    [/상가|근린|점포|사무실/, function (it) { return /상가|근린/.test(it.usage); }, '상가·근린'],
+    [/단독|다가구|전원주택/, function (it) { return /단독|다가구/.test(it.usage); }, '단독·다가구'],
+    [/토지|대지|임야|땅/, function (it) { return /대지|토지|임야/.test(it.usage); }, '토지']
+  ];
+  var STOP = ['광역시', '특별시', '특별자치시', '특별자치도', '아파트', '물건', '매물', '경매', '추천', '지역', '근처', '주변',
+    '동네', '이하', '이상', '정도', '최저가', '감정가', '할인', '할인율', '유찰', '점수', '순위', '전국', '베스트', '상위', '안전',
+    '주의', '부동산', '법원', '보여줘', '알려줘', '찾아줘', '추천해줘', '중에', '그중', '가격', '제일', '가장', '최고', '좋은',
+    '저렴한', '진행', '예정', '임박', '매각', '기일', '매각기일', '자세히', '상세', '비교', '높은', '낮은', '많은', '이번', '다음',
+    '최근', '보여', '추천', '거기서', '여기서', '결과', '입찰', '입찰가', '비용', '계산', '통계', '현황'];
+  function rx(re) { return new RegExp(re.source, 'g'); }
+
+  /* ------------------------------------------------------------------ */
+  /* 2. 자연어 → 검색 조건 파서                                             */
+  /* ------------------------------------------------------------------ */
+  function parseCriteria(q) {
+    var c = { gu: [], sido: [], group: [], usage: [], usageLabel: [], maxPrice: null, minPrice: null, priceField: 'min_price',
+      minDisc: null, minYuchal: null, month: null, range: null, rangeLabel: '', upcoming: false, safeOnly: false,
+      keywords: [], sort: null, limit: null, cat: null, has: false };
+    var t = ' ' + q + ' ', m;
+
+    if (/(top|탑)\s*50/i.test(t)) { c.cat = 'daejeon'; t = t.replace(/(top|탑)\s*50/ig, ' '); }
+    else if (/전국\s*베스트|권역\s*베스트|권역별\s*추천/.test(t)) { c.cat = 'nationwide_best'; t = t.replace(/전국\s*베스트|권역\s*베스트|권역별\s*추천/g, ' '); }
+
+    GROUPS.forEach(function (g) { if (g[0].test(t)) { c.group.push(g[1]); t = t.replace(rx(g[0]), ' '); } });
+    GU.forEach(function (g) { if (g[0].test(t)) { c.gu.push(g[1]); t = t.replace(rx(g[0]), ' '); } });
+    SIDO.forEach(function (s) { if (s[0].test(t)) { c.sido.push(s[1]); t = t.replace(rx(s[0]), ' '); } });
+    USAGE.forEach(function (u) { if (u[0].test(t)) { c.usage.push(u[1]); c.usageLabel.push(u[2]); t = t.replace(rx(u[0]), ' '); } });
+
+    // 금액 (억/천만/만/원)
+    if (/감정/.test(q)) c.priceField = 'appraisal';
+    var moneyRe = /(\d+(?:\.\d+)?)\s*억(?:\s*(\d+)\s*(천만|천|백만|만))?|(\d+)\s*천\s*만?|(\d{1,3}(?:,\d{3})+|\d+)\s*만|(\d{1,3}(?:,\d{3}){2,})\s*원/g;
+    var toks = [];
+    while ((m = moneyRe.exec(t)) !== null) {
+      var v = 0;
+      if (m[1]) {
+        v = parseFloat(m[1]) * 1e8;
+        if (m[2]) v += parseInt(m[2], 10) * ({ '천만': 1e7, '천': 1e7, '백만': 1e6, '만': 1e4 }[m[3]]);
+      } else if (m[4]) v = parseInt(m[4], 10) * 1e7;
+      else if (m[5]) v = parseInt(m[5].replace(/,/g, ''), 10) * 1e4;
+      else if (m[6]) v = parseInt(m[6].replace(/,/g, ''), 10);
+      var after = t.slice(m.index + m[0].length, m.index + m[0].length + 12);
+      var type = 'max';
+      if (/^\s*원?\s*(이상|초과|넘|부터|보다\s*(비싼|높|큰|비싸))/.test(after)) type = 'min';
+      else if (/^\s*원?\s*(~|-|에서|부터)/.test(after)) type = 'range';
+      toks.push({ v: v, type: type });
+    }
+    for (var i = 0; i < toks.length; i++) {
+      if (toks[i].type === 'range' && toks[i + 1]) { c.minPrice = toks[i].v; c.maxPrice = toks[i + 1].v; i++; }
+      else if (toks[i].type === 'min') c.minPrice = toks[i].v;
+      else c.maxPrice = toks[i].v;
+    }
+    t = t.replace(moneyRe, ' ');
+
+    // 할인율 / 유찰
+    if ((m = t.match(/(\d+(?:\.\d+)?)\s*%/))) c.minDisc = parseFloat(m[1]);
+    else if (/반값|반\s*이상\s*할인/.test(t)) c.minDisc = 50;
+    if ((m = t.match(/유찰\s*(\d+)\s*회|(\d+)\s*회\s*(이상\s*)?유찰/))) c.minYuchal = parseInt(m[1] || m[2], 10);
+    t = t.replace(/(\d+(?:\.\d+)?)\s*%|유찰\s*\d+\s*회|\d+\s*회/g, ' ');
+
+    // 날짜
+    var day = TODAY.getDay() || 7, mon = new Date(TODAY); mon.setDate(TODAY.getDate() - day + 1);
+    var sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    if (/이번\s*주|금주/.test(t)) { c.range = [mon, sun]; c.rangeLabel = '이번 주'; }
+    else if (/다음\s*주|차주/.test(t)) {
+      var nm = new Date(mon); nm.setDate(mon.getDate() + 7); var ns = new Date(nm); ns.setDate(nm.getDate() + 6);
+      c.range = [nm, ns]; c.rangeLabel = '다음 주';
+    } else if (/이번\s*달|이달/.test(t)) c.month = TODAY.getMonth() + 1;
+    else if ((m = t.match(/(\d{1,2})\s*월/))) { var mm = parseInt(m[1], 10); if (mm >= 1 && mm <= 12) c.month = mm; }
+    if (/임박|다가오는|곧\s|가까운|앞으로|남은|진행\s*예정|예정된/.test(t)) c.upcoming = true;
+    t = t.replace(/\d{1,2}\s*월/g, ' ');
+
+    if (/안전한|안전\s*(물건|매물)|위험\s*없|특수\s*권리\s*없|깨끗|소멸주의\s*(물건|매물)/.test(q)) c.safeOnly = true;
+
+    // 정렬
+    if (/싼|저렴|싸게|가격\s*(이\s*)?낮|최저가\s*(낮|순)|소액|저가|적은\s*돈/.test(q)) c.sort = 'price_asc';
+    else if (/할인율?\s*(이\s*)?(높|큰|많|순)|많이\s*(할인|떨어)|반값|떨어진|유찰\s*(이\s*)?많/.test(q)) c.sort = 'disc_desc';
+    else if (/임박|빠른|가까운|다가오는|급한|일정\s*순|기일\s*순/.test(q)) c.sort = 'date_asc';
+    else if (/비싼|고가|넓은|큰\s*평수|감정가\s*(가\s*)?높/.test(q)) c.sort = 'appr_desc';
+    else if (/점수|추천|좋은|최고|우수|괜찮은/.test(q)) c.sort = 'score_desc';
+
+    // 개수
+    if ((m = q.match(/(top|탑|상위)\s*(\d+)/i)) && m[2] !== '50') c.limit = parseInt(m[2], 10);
+    else if ((m = q.match(/(\d+)\s*(개|건|곳|가지|채)/))) c.limit = parseInt(m[1], 10);
+    else if (/제일|가장|최고/.test(q)) c.limit = 3;
+    if (c.limit) c.limit = Math.max(1, Math.min(c.limit, 20));
+
+    // 자유 키워드 (동/단지명 등 주소에 실제 존재하는 단어만 채택)
+    t.replace(/[^가-힣a-zA-Z0-9]/g, ' ').split(/\s+/).forEach(function (w) {
+      w = w.replace(/(으로|에서|에게|까지|부터|이랑|하고|근처|주변|쪽에?|은|는|이|가|을|를|에|의|로|도|만|와|과)$/, '');
+      if (w.length < 2 || /^\d+$/.test(w) || STOP.indexOf(w) >= 0) return;
+      var hit = DATA.some(function (it) { return String(it.address).indexOf(w) >= 0 || String(it.case_no).indexOf(w) >= 0; });
+      if (hit && c.keywords.indexOf(w) < 0) c.keywords.push(w);
+    });
+
+    c.has = !!(c.gu.length || c.sido.length || c.group.length || c.usage.length || c.maxPrice != null || c.minPrice != null ||
+      c.minDisc != null || c.minYuchal != null || c.month || c.range || c.upcoming || c.safeOnly || c.keywords.length || c.cat);
+    return c;
+  }
+
+  function applyCriteria(list, c) {
+    var seenKeys = {};
+    var r = list.filter(function (it) {
+      if (c.cat && it.category !== c.cat) return false;
+      if (c.group.length && !c.group.some(function (g) { return String(it.region_group).indexOf(g) >= 0 || String(it.region_key || '').indexOf(g) >= 0; })) return false;
+      if (c.sido.length && !c.sido.some(function (s) { return String(it.sido).indexOf(s) >= 0; })) return false;
+      if (c.gu.length && !c.gu.some(function (g) { return it.sigu === g || String(it.address).indexOf(' ' + g + ' ') >= 0; })) return false;
+      if (c.usage.length && !c.usage.some(function (u) { return u(it); })) return false;
+      var pv = Number(it[c.priceField]) || 0;
+      if (c.maxPrice != null && pv > c.maxPrice) return false;
+      if (c.minPrice != null && pv < c.minPrice) return false;
+      if (c.minDisc != null && it.discount_val < c.minDisc) return false;
+      if (c.minYuchal != null && yuchalN(it) < c.minYuchal) return false;
+      var d = dateOf(it);
+      if (c.month && (!d || d.getMonth() + 1 !== c.month)) return false;
+      if (c.range && (!d || d < c.range[0] || d > c.range[1])) return false;
+      if (c.upcoming && (!d || d < TODAY)) return false;
+      if (c.safeOnly && isRisky(it)) return false;
+      if (c.keywords.length && !c.keywords.every(function (k) { return (it.address + ' ' + it.case_no + ' ' + it.court).indexOf(k) >= 0; })) return false;
+      var uk = (it.court || '') + '_' + (it.case_no || '') + '_' + (it.item_no || '1');
+      if (seenKeys[uk]) return false;
+      seenKeys[uk] = true;
+      return true;
+    });
+    var cmp = {
+      score_desc: function (a, b) { return b.score - a.score || b.discount_val - a.discount_val; },
+      price_asc: function (a, b) { return a.min_price - b.min_price; },
+      disc_desc: function (a, b) { return b.discount_val - a.discount_val; },
+      date_asc: function (a, b) { return String(a.date).localeCompare(String(b.date)); },
+      appr_desc: function (a, b) { return b.appraisal - a.appraisal; }
+    }[c.sort || 'score_desc'];
+    return r.sort(cmp);
+  }
+
+  function describe(c) {
+    var p = [];
+    if (c.cat) p.push(c.cat === 'daejeon' ? '🏆 대전 TOP 100' : '🌐 권역별 TOP 100');
+    if (c.group.length) p.push('🗺 ' + c.group.map(function (g) { return /권$/.test(g) ? g : g + '권'; }).join('/'));
+    if (c.sido.length) p.push('📍 ' + c.sido.join('/'));
+    if (c.gu.length) p.push('📍 ' + c.gu.join('/'));
+    if (c.usageLabel.length) p.push('🏠 ' + c.usageLabel.join('/'));
+    var f = c.priceField === 'appraisal' ? '감정가' : '최저가';
+    if (c.minPrice != null && c.maxPrice != null) p.push('💰 ' + f + ' ' + won(c.minPrice) + '~' + won(c.maxPrice));
+    else if (c.maxPrice != null) p.push('💰 ' + f + ' ' + won(c.maxPrice) + ' 이하');
+    else if (c.minPrice != null) p.push('💰 ' + f + ' ' + won(c.minPrice) + ' 이상');
+    if (c.minDisc != null) p.push('📉 할인 ' + c.minDisc + '%↑');
+    if (c.minYuchal != null) p.push('🔁 유찰 ' + c.minYuchal + '회↑');
+    if (c.month) p.push('📅 ' + c.month + '월 매각');
+    if (c.rangeLabel) p.push('📅 ' + c.rangeLabel);
+    if (c.upcoming) p.push('⏰ 진행 예정만');
+    if (c.safeOnly) p.push('🛡 권리 안전만');
+    if (c.keywords.length) p.push('🔤 "' + c.keywords.join('", "') + '"');
+    p.push('↕ ' + { score_desc: '점수 높은순', price_asc: '최저가 낮은순', disc_desc: '할인율 높은순', date_asc: '매각기일 빠른순', appr_desc: '감정가 높은순' }[c.sort || 'score_desc']);
+    return p.join(' · ');
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 3. 계산 로직 (점수 구성 / 취득세 / 입찰비용)                              */
+  /* ------------------------------------------------------------------ */
+  function scoreBreak(it) {
+    var d = it.discount_val, u = String(it.usage), g = it.sigu;
+    var p = d >= 60 ? 40 : d >= 45 ? 32 : d >= 30 ? 25 : d >= 15 ? 18 : 10;
+    var r = isRisky(it) ? -15 : 30;
+    var us = /아파트|주상복합/.test(u) ? 20 : /오피스텔|다세대|연립|빌라/.test(u) ? 16 : /단독|다가구|상가주택/.test(u) ? 14 :
+      /근린생활|상가|점포|업무|근린/.test(u) ? 12 : /대지|주택용지/.test(u) ? 10 : 7;
+    var l = g === '유성구' ? 10 : g === '서구' ? 9 : g === '중구' ? 7 : (g === '동구' || g === '대덕구') ? 6 : 5;
+    return { p: p, r: r, us: us, l: l, total: Math.max(0, p + r + us + l) };
+  }
+
+  function isHouse(usage) { return /아파트|다세대|연립|빌라|단독|다가구|주택/.test(usage) && !/상가|근린|오피스텔/.test(usage); }
+  function taxInfo(price, usage) {
+    if (!isHouse(usage)) return { rate: 4.6, label: '주택 외(상가·오피스텔·토지 등) 약 4.6%' };
+    if (price <= 6e8) return { rate: 1.1, label: '1주택 6억 이하 약 1.1%' };
+    if (price <= 9e8) { var b = (price / 1e8) * 2 / 3 - 3, r = Math.round(b * 1.1 * 100) / 100; return { rate: r, label: '1주택 6~9억 구간 약 ' + r + '%' }; }
+    return { rate: 3.3, label: '1주택 9억 초과 약 3.3%' };
+  }
+
+  function calcHtml(price, appraisal, usage, title) {
+    var ti = taxInfo(price, usage);
+    var rows = [1, 1.05, 1.1, 1.2].map(function (k) {
+      var bid = Math.round(price * k / 1000) * 1000, tx = taxInfo(bid, usage), tax = Math.round(bid * tx.rate / 100);
+      return '<tr><td>' + (k === 1 ? '최저가' : '+' + Math.round((k - 1) * 100) + '%') + '</td><td>' + won(bid) + '</td><td>' +
+        (appraisal ? (bid / appraisal * 100).toFixed(1) + '%' : '-') + '</td><td>' + won(tax) + '</td><td><b>' + won(bid + tax) + '</b></td></tr>';
+    }).join('');
+    return '<h5>💰 입찰비용 시뮬레이션' + (title ? ' — ' + esc(title) : '') + '</h5>' +
+      '<ul><li>최저매각가격: <b>' + won(price) + '</b>' + (appraisal ? ' (감정가 ' + won(appraisal) + ')' : '') + '</li>' +
+      '<li>입찰보증금(최저가의 10%): <b style="color:#e53e3e">' + won(price * 0.1) + '</b> — 자기앞수표 1장 권장</li>' +
+      '<li>적용 세율(추정): ' + esc(ti.label) + '</li></ul>' +
+      '<table><tr><th>입찰가</th><th>금액</th><th>감정가比</th><th>취득세 등</th><th>합계</th></tr>' + rows + '</table>' +
+      '<p>🎯 <b>최대 입찰가 공식</b>: 예상 매도가(급매 시세) − 목표 수익 − (취득세+등기·법무비+명도비+수리비+미납관리비+대출이자)</p>' +
+      '<div class="cb-note">※ 취득세는 1주택 일반세율(지방교육세 포함) 기준 추정치입니다. 다주택·조정대상지역 중과, 85㎡ 초과 농특세, 감면 여부에 따라 달라지므로 위택스/세무사로 확인하세요. 재매각 사건은 보증금이 20~30%일 수 있습니다.</div>';
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 4. 렌더링 헬퍼                                                        */
+  /* ------------------------------------------------------------------ */
+  function itemCard(it, idx) {
+    return '<div class="cb-item" data-open="' + esc(it.id) + '" title="클릭하면 상세정보 팝업">' +
+      '<div class="t">' + (idx != null ? (idx + 1) + '. ' : '') + esc(cut(it.address, 50)) + '</div>' +
+      '<div class="m"><span class="cb-tag s">' + esc(it.score) + '점</span><span class="cb-tag x">' + esc(it.rank) + '</span>' +
+      '<span class="cb-tag d">할인 ' + esc(it.discount) + '</span>' +
+      (isRisky(it) ? '<span class="cb-tag w">⚠ 주의물건</span>' : '<span class="cb-tag r">권리 안전</span>') +
+      (isPast(it) ? '<span class="cb-tag w">기일 경과</span>' : '') + '</div>' +
+      '<div class="p">최저가 <b>' + won(it.min_price) + '</b> <span style="color:#a0aec0">/ 감정가 ' + won(it.appraisal) + '</span></div>' +
+      '<div class="m">' + esc(it.usage) + ' · ' + esc(it.court) + ' ' + esc(it.case_no) + ' · 📅 ' + esc(it.date) + ' · 유찰 ' + esc(it.yuchal) + '</div></div>';
+  }
+
+  function detailHtml(it) {
+    var sb = it.category === 'daejeon' ? scoreBreak(it) : null;
+    return '<h5>🏠 ' + esc(it.rank) + ' · ' + esc(it.court) + ' ' + esc(it.case_no) + (it.item_no && String(it.item_no) !== '1' ? ' (물건 ' + esc(it.item_no) + ')' : '') + '</h5>' +
+      '<div style="font-weight:700;color:#1a365d">' + esc(it.address) + '</div>' +
+      '<div style="font-size:.76rem;color:#718096;margin:2px 0 6px">' + esc(cut(cleanSpec(it.spec), 140)) + '</div>' +
+      '<table><tr><th>감정가</th><td>' + won(it.appraisal) + '</td><th>최저가</th><td><b style="color:#e53e3e">' + won(it.min_price) + '</b></td></tr>' +
+      '<tr><th>할인율</th><td>' + esc(it.discount) + '</td><th>유찰</th><td>' + esc(it.yuchal) + '</td></tr>' +
+      '<tr><th>매각기일</th><td>' + esc(it.date) + (isPast(it) ? ' ⚠경과' : '') + '</td><th>담당</th><td>' + esc(it.dept || '-') + '</td></tr>' +
+      '<tr><th>용도</th><td>' + esc(it.usage) + '</td><th>권리</th><td>' + esc(it.risk) + '</td></tr></table>' +
+      (sb && sb.total === it.score
+        ? '<div>📊 점수 구성: 가격 ' + sb.p + '/40 · 권리 ' + sb.r + '/30 · 용도 ' + sb.us + '/20 · 입지 ' + sb.l + '/10 = <b>' + sb.total + '점</b></div>'
+        : '<div>📊 종합점수: <b>' + esc(it.score) + '점</b></div>') +
+      '<div class="guide-box-pro" style="margin-top:6px;background:#f0fff4;padding:6px 8px;border-radius:6px;font-size:.8rem">💡 ' + esc(it.comment || '') + '</div>' +
+      (isPast(it) ? '<div class="cb-note" style="color:#c05621">⚠ 매각기일이 지났습니다. 낙찰·변경·취하 여부를 대법원 사이트에서 확인하세요.</div>' : '') +
+      '<div class="cb-note">입찰보증금(10%) 약 ' + won(it.min_price * 0.1) + ' · 입찰 전 매각물건명세서·현황조사서·등기부 확인 필수</div>';
+  }
+
+  function itemText(it) {
+    return it.rank + ' ' + it.address + ' / ' + it.usage + ' / 감정가 ' + won(it.appraisal) + ' / 최저가 ' + won(it.min_price) +
+      ' / 할인 ' + it.discount + ' / 유찰 ' + it.yuchal + ' / 매각기일 ' + it.date + ' / ' + it.court + ' ' + it.case_no + ' / ' + it.score + '점 / ' + it.risk;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 5. 지식 베이스 (용어 · 절차)                                            */
+  /* ------------------------------------------------------------------ */
+  var KB = [
+
+    { k: /동행\s*모드|입찰장\s*동행|당일\s*동행|입찰함|신분증\s*도장|무효표\s*방지|대형\s*돋보기/, t: '🏛️ 실전 당일 모바일 법원 입찰장 동행 모드 & 당일 준비',
+      a: '<p><b>법원 입찰장 동행 모드(Court Day Live)</b>는 실전 입찰 당일 법정에서 실수 없이 완벽하게 투표하도록 돕는 스마트 보조 시스템입니다.</p>' +
+        '<ul><li><b>실시간 입찰함 마감 타이머:</b> 법원별(오전 11:10~11:30 등) 마감 잔여 시간을 초 단위 카운트다운하여 마감 직전 긴급 투표 실수를 방지합니다.</li>' +
+        '<li><b>3대 필수 지참물 체크리스트:</b> 1) 본인 신분증, 2) 도장(인감 또는 막도장), 3) 자기앞수표 1장(입찰보증금 10%) 현장 체크.</li>' +
+        '<li><b>현장 필기 보조 대형 돋보기:</b> 입찰봉투·기일입찰표 작성 시 사건번호, 물건번호, 보증금 및 입찰가를 한글 금융 표기(예: 일억이천삼백만 원)와 아라비아 숫자로 큼직하게 띄워 현장 오기재를 원천 방지합니다.</li>' +
+        '<li><b>3대 무효표 사전 경고:</b> 보증금 1원 부족, 입찰가 자릿수 오류(0 하나 더 쓰기), 정정인 미날인 등 빈번한 3대 무효표를 사전 안내합니다.</li></ul>' +
+        '<div style="margin-top:8px;"><button type="button" class="at-btn primary" style="background:#0f172a; color:#fff;" onclick="if(window.AT){var first=(window.rawData||[])[0]; AT.openCourtDay(first?first.id:null);}">🏛️ 법원 입찰장 동행 모드 열기 ↗</button></div>',
+      rel: ['기일입찰표 작성', '위반건축물 점검', '3대 출구전략'] },
+
+    { k: /위반\s*건축물|이행\s*강제금|근생\s*빌라|불법\s*증축|샷시\s*확장|위반\s*의심|클린\s*건물/, t: '🚨 위반건축물 & 이행강제금 사전 경고 레이더',
+      a: '<p>경매 낙찰 시 가장 큰 복병 중 하나는 건축물대장상 <b>위반건축물 등재 여부와 매년 부과되는 이행강제금</b>입니다.</p>' +
+        '<ul><li><b>3단계 리스크 판정:</b> ① <code>🚨 위반주의</code>(근생빌라 무단 주거개조 의심), ② <code>⚠️ 증축점검</code>(베란다 샷시 불법확장·옥탑 증축 의심), ③ <code>✅ 정상건축물 클린</code>(리스크 없음).</li>' +
+        '<li><b>근생빌라(근린생활시설 무단개조):</b> 공부상 상가인데 다세대주택으로 둔갑 분양된 경우, 전세대출 및 주택담보대출이 불가하며 원상복구 시까지 매년 시가표준액의 10%에 달하는 이행강제금이 부과됩니다.</li>' +
+        '<li><b>연간 예상 이행강제금:</b> <code>위반면적(㎡) × 시가표준액 × 50% × 부과비율</code> 공식을 통해 연간 부과액을 사전 산출하여 실투자금 계획에 반영합니다.</li></ul>' +
+        '<div style="margin-top:8px;"><button type="button" class="at-btn primary" style="background:#059669; color:#fff;" onclick="if(window.setQuickLegalFilter){setQuickLegalFilter(\'CLEAN_BLDG\', document.getElementById(\'lqf-clean-bldg\'));}">✅ 위반없는 클린건물 필터 적용하기 ↗</button></div>',
+      rel: ['3대 출구전략', '법원 입찰장 동행', '체납관리비 판례'] },
+
+    { k: /출구\s*전략|단기\s*매매|전세\s*갭|월세\s*연금|순이익\s*비교|세후\s*수익|플러스피/, t: '💰 3대 출구전략(단기매매 vs 전세갭 vs 월세) 세후 순이익 비교기',
+      a: '<p>경매는 <b>낙찰받기 전에 출구전략(Exit Strategy)과 세후 순수익을 확정</b>해두어야 성공합니다. 포털은 3대 시나리오를 1:1로 비교 분석합니다.</p>' +
+        '<ul><li><b>1. 단기 매매(Flipping):</b> 양도차익에서 필요경비(취득세·명도비·수리비·중개수수료)와 양도소득세(단기세율 적용)를 공제한 <b>실제 손에 쥐는 세후 순이익 &amp; 세후 ROI</b> 계산.</li>' +
+        '<li><b>2. 전세 갭투자(Rent Gap):</b> 낙찰가 대비 전세 보증금 차이로 <b>실투자금 회수율 및 플러스피(+P, 전세금이 매입가를 초과하여 투자금 전액 회수)</b> 달성 여부 판정.</li>' +
+        '<li><b>3. 월세 연금(Cash Flow):</b> 보증금 및 월세 수입에서 대출 이자를 제외한 <b>월 순현금흐름(Net Cash Flow)과 자기자본 수익률(ROE)</b> 산출.</li>' +
+        '<li><b>AI 종합 판정:</b> 물건의 입지·용도·유찰 횟수를 기반으로 최적의 출구전략을 1순위 추천합니다.</li></ul>' +
+        '<div style="margin-top:8px;"><button type="button" class="at-btn primary" style="background:#059669; color:#fff;" onclick="if(window.AT){var first=(window.rawData||[])[0]; AT.openExitStrategy(first?first.id:null);}">💰 3대 출구전략 시뮬레이터 열기 ↗</button></div>',
+      rel: ['경락잔금대출 한도', '위반건축물 점검', '입찰 캘린더'] },
+
+    { k: /캘린더|달력|입찰\s*일정|기일\s*달력|월별\s*경매/, t: '📅 전국 법원 입찰 월간 캘린더 & 관심물건 일정 뷰',
+      a: '<p><b>입찰 캘린더 뷰(Interactive Calendar)</b>를 통해 이번 달과 다음 달의 전국 법원 경매 일정을 달력 형태로 한눈에 조망할 수 있습니다.</p>' +
+        '<ul><li><b>월별/일자별 일정 파악:</b> 특정 일자에 열리는 경매 건수와 관할 법원별 그룹핑 칩을 직관적으로 확인.</li>' +
+        '<li><b>일자별 매물 슬라이드 드로어:</b> 달력의 특정 날짜를 클릭하면 하단 패널에 해당 일자 물건 목록이 펼쳐지며 즉시 상세분석이 가능합니다.</li>' +
+        '<li><b>⭐ 관심물건(찜) 캘린더 필터:</b> 내가 찜한 관심물건만 달력에 표시하여 놓치지 않고 입찰 기일을 챙길 수 있습니다.</li></ul>' +
+        '<div style="margin-top:8px;"><button type="button" class="at-btn primary" style="background:#2563eb; color:#fff;" onclick="if(window.setViewMode){setViewMode(\'calendar\');}">📅 입찰 캘린더 뷰 전환하기 ↗</button></div>',
+      rel: ['법원 입찰장 동행', '위반건축물 점검', '3대 출구전략'] },
+    { k: /경락\s*(잔금)?\s*대출|방공제|mci|mcg|대출\s*한도/, t: '🏦 경락잔금대출 조건 & 방공제(최우선변제금) 계산법',
+      a: '<p><b>경락잔금대출</b>은 법원 경매 낙찰자가 잔금을 납부하기 위해 낙찰받은 부동산을 담보로 실행하는 특별 담보대출입니다.</p>' +
+        '<ul><li><b>기본 한도 공식:</b> <code>min(낙찰가의 80%, 감정가의 70%) - 방공제</code></li>' +
+        '<li><b>소액임차보증금(방공제):</b> 주택임대차보호법상 최우선변제금(서울 5,500만, 수도권 과밀 4,800만, 광역시 2,800만, 기타 2,500만 원)을 방 개수만큼 차감합니다.</li>' +
+        '<li><b>MCI·MCG 가입 혜택:</b> 모기지신용보험(MCI/MCG)에 가입하면 <b>방공제 차감이 전액 면제</b>되어 대출 한도를 최대로 살릴 수 있습니다.</li></ul>' +
+        '<div style="margin-top:8px;"><button type="button" class="at-btn primary" style="background:#0284c7; color:#fff;" onclick="if(window.AT){var first=(window.rawData||[])[0]; AT.openLoanCalc(first?first.id:null);}">🏦 경락잔금대출 &amp; 실투자금 계산기 열기 ↗</button></div>',
+      rel: ['취득세 계산법', '입찰보증금 준비', '예상 낙찰가'] },
+
+    { k: /예상\s*낙찰가|낙찰가율|얼마\s*(써야|적정)|입찰가\s*추천/, t: '🎯 AI 빅데이터 예상 낙찰가율 산정 원리',
+      a: '<p>법원 경매 입찰 시 가장 중요한 것은 <b>"수익을 남기면서도 낙찰될 수 있는 황금 입찰가"</b>를 산정하는 것입니다.</p>' +
+        '<ul><li><b>1. 수익 극대화형 (보수적):</b> 최저가 + 2~3% 수준. 단독 낙찰이나 소수 경쟁 노림수로 시세차익 극대화.</li>' +
+        '<li><b>2. 적정 균형형 (통계 추천 - 베스트):</b> 해당 법원·용도별 최근 6개월 평균 낙찰가율(수도권 아파트 85~90%, 지방 78~84%)을 가중 반영한 최적 낙찰권.</li>' +
+        '<li><b>3. 확실한 낙찰형 (공격적):</b> 최근 실거래가의 88~92% 수준. 실거주 갈아타기나 우량 단지 타깃.</li></ul>' +
+        '<div style="margin-top:8px;"><button type="button" class="at-btn primary" style="background:#d97706; color:#fff;" onclick="if(window.AT){var first=(window.rawData||[])[0]; AT.openBidPredict(first?first.id:null);}">🎯 AI 예상 낙찰가 3대 시나리오 분석기 열기 ↗</button></div>',
+      rel: ['경락잔금대출 한도', '기일입찰표 작성', '소멸주의란?'] },
+
+    { k: /체납\s*관리비|관리비\s*판례|공용\s*관리비|연체료/, t: '📋 관리사무소 체납관리비 대법원 판례 & 협상법',
+      a: '<p>경매 낙찰 후 관리사무소와의 체납관리비 분쟁은 <b>대법원 전원합의체 판례(2001다42010 등)</b>를 근거로 깔끔하게 해결할 수 있습니다.</p>' +
+        '<ul><li><b>낙찰자 승계:</b> 최근 3년 범위 내의 <b>공용부분 관리비 원금</b>(전체 체납액의 약 60~65%)만 납부 의무가 있습니다.</li>' +
+        '<li><b>낙찰자 불승계 (면책):</b> 전용부분(전기·가스·수도 등) 관리비와 <b>연체료(가산금) 전액</b>은 종전 입주자의 고유 채무로서 낙찰자에게 1원도 승계되지 않습니다.</li></ul>' +
+        '<div style="margin-top:8px;"><button type="button" class="at-btn primary" style="background:#059669; color:#fff;" onclick="if(window.AT){var first=(window.rawData||[])[0]; AT.openFieldChecklist(first?first.id:null); if(window.AT.switchFieldTab) AT.switchFieldTab(\'maint\');}">📋 체납관리비 분리 계산기 &amp; 협상문 열기 ↗</button></div>',
+      rel: ['현장 임장 체크리스트', '점유자 명도 절차', '인도명령이란?'] },
+
+    { k: /인도\s*명령|명도\s*(절차|소송|협상)|내용\s*증명|강제\s*집행/, t: '📜 점유자 명도 협상 & 법원 부동산 인도명령 절차',
+      a: '<p>낙찰 후 점유자(임차인 또는 전 소유자)로부터 부동산을 인도받는 절차는 <b>"정중한 1차 이사 협의"</b>와 <b>"신속한 법원 인도명령 신청"</b>을 병행하는 것이 정석입니다.</p>' +
+        '<ul><li><b>부동산 인도명령 (민사집행법 제136조):</b> 잔금 완납 즉시 법원에 신청하면 1~2주 내 결정문이 발령되어 6개월 내에 강제집행 권원을 확보할 수 있습니다.</li>' +
+        '<li><b>이사비 협상:</b> 강제집행 비용(노무비·보관비 200~400만 원)을 감안하여 점유자에게 자진 퇴거 시 100~200만 원의 이사비를 실비 지원하는 조건으로 합의하는 것이 가장 빠르고 안전합니다.</li></ul>' +
+        '<div style="margin-top:8px;"><button type="button" class="at-btn primary" style="background:#dc2626; color:#fff;" onclick="if(window.AT){var first=(window.rawData||[])[0]; AT.openEvictDoc(first?first.id:null);}">📜 명도 안내문 &amp; 인도명령 신청서 작성기 열기 ↗</button></div>',
+      rel: ['대항력이 뭐야?', '체납관리비 판례', '경락잔금대출'] },
+    { k: /소멸\s*주의|삭제주의/, t: '⚖️ 소멸주의(消滅主義)란?',
+      a: '<p>낙찰자가 <b>매각대금을 완납</b>하면 등기부상의 <b>말소기준권리와 그보다 늦은(후순위) 권리</b>가 법원의 말소촉탁으로 <b>모두 지워지는</b> 원칙입니다(민사집행법 제91조).</p>' +
+        '<ul><li>소멸 대상: (근)저당권, (가)압류, 담보가등기, 경매개시결정등기, 말소기준권리보다 늦은 전세권·임차권·가처분 등</li>' +
+        '<li>효과: 전 소유자의 빚을 떠안지 않고 <b>깨끗한 소유권</b>을 취득 → 시세보다 싸게 사는 경매의 핵심 장점</li></ul>' +
+        '<div class="cb-note">⚠ 말소기준권리보다 <b>앞선</b> 권리(선순위 대항력 임차인, 선순위 가처분·가등기 등)와 유치권·법정지상권은 소멸하지 않고 인수될 수 있습니다.</div>',
+      rel: ['인수주의란?', '말소기준권리란?', '대항력이 뭐야?'] },
+    { k: /인수\s*주의|인수되는|인수\s*권리|떠안/, t: '📌 인수주의 · 낙찰자가 인수하는 권리',
+      a: '<p>매각 후에도 소멸하지 않고 <b>낙찰자에게 넘어오는</b> 권리를 말합니다.</p><ul>' +
+        '<li><b>선순위 대항력 임차인</b>: 배당받지 못한 보증금 인수</li><li><b>선순위 가처분·소유권이전청구권 가등기</b>: 소유권 상실 위험</li>' +
+        '<li><b>선순위 전세권</b>(배당요구하지 않은 경우)</li><li><b>유치권·법정지상권·분묘기지권</b>: 등기부에 나타나지 않는 권리</li>' +
+        '<li>예외적으로 후순위라도 <b>건물철거·토지인도 청구 가처분</b>은 인수될 수 있음</li></ul>' +
+        '<div class="cb-note">→ 매각물건명세서의 "인수되는 권리" 란과 현황조사서를 반드시 확인하세요.</div>',
+      rel: ['소멸주의란?', '유치권이 뭐야?', '법정지상권이 뭐야?'] },
+    { k: /말소\s*기준/, t: '🧭 말소기준권리란?',
+      a: '<p>낙찰 후 <b>소멸/인수를 가르는 기준선</b>이 되는 권리입니다. 아래 권리 중 <b>가장 먼저 설정된 것</b>이 말소기준권리가 됩니다.</p>' +
+        '<ul><li>(근)저당권 · (가)압류 · 담보가등기 · 경매개시결정등기</li><li>전세권(건물 전체 전세권자가 배당요구하거나 경매를 신청한 경우)</li></ul>' +
+        '<p>👉 말소기준권리 <b>이후</b> 권리 = 소멸 / <b>이전</b> 권리 = 원칙적 인수</p>',
+      rel: ['대항력이 뭐야?', '인수주의란?', '배당 순서는?'] },
+    { k: /대항력|임차인|세입자|전입/, t: '🏠 임차인 대항력',
+      a: '<ul><li><b>요건</b>: 주택 인도(입주) + 전입신고 → <b>다음 날 0시</b>에 대항력 발생</li>' +
+        '<li>전입일이 <b>말소기준권리보다 빠르면</b> 선순위(대항력 있음) → 배당받지 못한 보증금은 <b>낙찰자가 인수</b></li>' +
+        '<li>말소기준권리보다 <b>늦으면</b> 대항력 없음 → 보증금 인수 없음, 인도명령으로 명도 가능</li></ul>' +
+        '<div class="cb-note">팁: 전입세대열람원과 매각물건명세서의 "점유자 현황"·"배당요구 여부"를 함께 확인하세요.</div>',
+      rel: ['확정일자·우선변제란?', '명도는 어떻게 해?', '말소기준권리란?'] },
+    { k: /확정\s*일자|우선\s*변제|최우선|소액\s*임차/, t: '📝 확정일자 · 우선변제 · 최우선변제',
+      a: '<ul><li><b>우선변제권</b>: 대항요건(인도+전입) + 확정일자 → 배당에서 순위에 따라 보증금 우선 배당 (배당요구종기까지 배당요구 필요)</li>' +
+        '<li><b>최우선변제</b>: 소액임차인이 경매개시결정등기 전에 대항요건을 갖추면 보증금 중 일정액을 선순위 담보권자보다 먼저 배당 (지역·담보설정일별 기준 금액 상이, 매각대금의 1/2 한도)</li></ul>',
+      rel: ['배당 순서는?', '대항력이 뭐야?'] },
+    { k: /유치권/, t: '🔒 유치권',
+      a: '<p>공사대금 등 그 물건에 관하여 생긴 채권을 받을 때까지 물건을 <b>점유</b>할 수 있는 권리로, <b>등기 없이</b> 성립하며 낙찰자에게 대항할 수 있습니다.</p>' +
+        '<ul><li>성립 요건: 적법한 점유 + 채권과 물건의 견련성 + 변제기 도래</li><li>경매개시결정 기입등기 <b>이후</b> 점유를 시작한 유치권은 매수인에게 대항 불가(판례)</li>' +
+        '<li>허위·과장 신고가 많아 <b>현장 점유 상태·공사 계약서</b> 확인이 핵심</li></ul>',
+      rel: ['법정지상권이 뭐야?', '인수주의란?'] },
+    { k: /법정\s*지상권|지상권/, t: '🏗 법정지상권',
+      a: '<p>토지와 건물이 <b>같은 소유자</b>였다가 경매 등으로 소유자가 달라질 때, 건물 소유자에게 법률상 인정되는 지상권입니다.</p>' +
+        '<ul><li>토지만 낙찰받으면 건물 철거를 요구하기 어렵고 지료만 청구 가능 → 활용도 급감</li><li>매각물건명세서에 "법정지상권 성립 여지 있음" 기재 시 특히 주의</li></ul>',
+      rel: ['유치권이 뭐야?', '지분 경매 주의점'] },
+    { k: /가처분|가등기/, t: '⚠️ 가처분 · 가등기',
+      a: '<ul><li><b>선순위 가처분</b>: 본안소송 결과에 따라 낙찰자가 소유권을 잃을 수 있음 → 인수</li>' +
+        '<li><b>선순위 소유권이전청구권 가등기</b>: 본등기 시 낙찰자 소유권 상실 → 인수</li>' +
+        '<li><b>담보가등기</b>: 저당권처럼 취급되어 말소기준권리가 될 수 있음</li></ul>' +
+        '<div class="cb-note">가등기는 담보용인지 소유권이전용인지 법원 최고서·채권신고 여부로 구별합니다.</div>',
+      rel: ['말소기준권리란?', '인수주의란?'] },
+    { k: /배당/, t: '💸 배당 순서 (일반적 흐름)',
+      a: '<ol><li>집행비용(경매비용)</li><li>최우선변제: 소액임차보증금 일정액, 최종 3개월 임금·재해보상금 등</li><li>당해세(그 부동산에 부과된 국세·지방세)</li>' +
+        '<li>담보물권·확정일자 임차인·조세 등 — 설정·확정·법정기일 순위대로</li><li>일반 임금채권, 일반 조세·공과금</li><li>일반채권(안분 배당)</li></ol>' +
+        '<div class="cb-note">※ 세부 순위는 법 개정·개별 사안에 따라 달라질 수 있습니다.</div>',
+      rel: ['확정일자·우선변제란?', '대항력이 뭐야?'] },
+    { k: /명도|인도\s*명령|점유자|이사\s*비/, t: '🚚 명도(점유자 내보내기)',
+      a: '<ul><li><b>인도명령</b>: 대금 납부 후 <b>6개월 이내</b> 신청 → 대항력 없는 점유자를 간이 절차로 퇴거 (기간 경과·대항력 있는 점유자는 명도소송)</li>' +
+        '<li>실무에서는 <b>협의 + 이사비 지원</b>으로 해결하는 경우가 많고, 협의 실패 시 강제집행</li>' +
+        '<li>미납 관리비 중 <b>공용부분</b>은 낙찰자 승계 가능성 → 관리사무소 사전 확인</li></ul>',
+      rel: ['대항력이 뭐야?', '낙찰 후 절차는?'] },
+    { k: /유찰|저감/, t: '🔁 유찰과 최저가 저감',
+      a: '<p>매각기일에 응찰자가 없으면 <b>유찰</b>되고, 다음 기일의 최저매각가격이 <b>통상 20%(일부 법원 30%)</b>씩 낮아집니다.</p>' +
+        '<p>예) 감정가 1억 → 1회 유찰 8,000만 → 2회 6,400만 → 3회 5,120만 (20% 저감 기준)</p>' +
+        '<div class="cb-note">유찰이 많다는 것은 가격 메리트이자 동시에 "숨은 하자" 신호일 수 있어 권리·현황 확인이 필수입니다.</div>',
+      rel: ['할인율 높은 순 5개', '안전마진 계산법'] },
+    { k: /최저\s*매각|최저가(란|가\s*뭐|의\s*의미)|감정\s*평가|감정가(란|가\s*뭐|는\s*어떻게)/, t: '🏷 감정가 · 최저매각가격',
+      a: '<ul><li><b>감정가</b>: 법원이 선임한 감정인이 평가한 가격 (평가 시점이 6개월~1년 전일 수 있어 현재 시세와 차이 발생)</li>' +
+        '<li><b>최저매각가격</b>: 이 금액 이상으로만 입찰 가능한 하한선. 첫 기일은 감정가, 유찰될 때마다 저감</li></ul>',
+      rel: ['유찰이 뭐야?', '입찰보증금은 얼마?'] },
+    { k: /보증금/, t: '💵 입찰보증금',
+      a: '<ul><li>원칙: <b>최저매각가격의 10%</b> (입찰가의 10%가 아님!)</li><li>재매각 사건: 법원이 20~30%로 정하는 경우가 많음</li>' +
+        '<li>자기앞수표 1장으로 준비하면 편리 · 패찰 시 그 자리에서 즉시 반환</li><li>낙찰 후 대금 미납 시 보증금은 몰수</li></ul>',
+      rel: ['입찰 준비물', '대전 1위 입찰비용 계산'] },
+    { k: /초보|입문|경매\s*진행\s*(순서|가이드|과정|단계)|경매\s*가이드|a\s*to\s*z/i, t: '🧭 초보자를 위한 실전 경매 진행 7단계 가이드',
+      a: '<ol>' +
+        '<li><b>STEP 1 [D-14일] 물건 선정</b>: 유찰 1~3회(할인 30~65%), 특수권리 없는 아파트·주거용 오피스텔 선별</li>' +
+        '<li><b>STEP 2 [D-10일] 서류 3종 권리분석</b>: 등기부등본(말소기준권리) · 매각물건명세서(선순위 임차인 유무) · 현황조사서 열람</li>' +
+        '<li><b>STEP 3 [D-5일] 현장 임장 & 시세·관리비 조사</b>: 국토부 실거래가·급매 호가, 중개소 2~3곳 방문, 관리사무소 미납 공용관리비 확인</li>' +
+        '<li><b>STEP 4 [D-2일] 입찰가 산정 & 대출 가심사</b>: <code>급매가 − 목표수익 − 부대비용</code> 공식 적용 및 경락잔금대출(70~80%) 한도 확인</li>' +
+        '<li><b>STEP 5 [D-Day 10:00] 법원 출석 & 입찰</b>: 신분증·도장·<b>최저가의 10% 자기앞수표 1장</b> 지참 후 기일입찰표 제출</li>' +
+        '<li><b>STEP 6 [낙찰 후 7~45일] 잔금 완납</b>: 매각허가결정(1주) → 확정(1주) → 대금지급기한(약 30일) 내 잔금 납부(즉시 소유권 취득)</li>' +
+        '<li><b>STEP 7 [잔금 후 1~6주] 인도명령 & 명도</b>: 잔금 당일 인도명령 신청, 점유자 이사 협의(공실·공과금 정산 확인 후 이사비 지급)</li>' +
+        '</ol>',
+      act: { label: '🧭 초보자 경매 가이드 탭 열기', act: 'tab', arg: 'guide' },
+      rel: ['입찰 당일 준비물', '말소기준권리란?', '명도는 어떻게 해?'] },
+    { k: /^(?![\s\S]*대리)[\s\S]*(준비물|입찰\s*(방법|절차|하는\s*법|요령)|입찰표|어떻게\s*입찰|경매\s*절차|현장\s*입찰)/, t: '🧾 입찰 당일 준비물 & 절차',
+      a: '<p><b>준비물(본인)</b>: 신분증, 도장(막도장 가능), 입찰보증금(최저가 10%)</p>' +
+        '<ol><li>관할 법원 입찰법정 도착 (대부분 오전 10시 전후 개정, 법원별 상이)</li><li>입찰표·보증금봉투 작성 → 입찰봉투에 넣어 제출</li>' +
+        '<li>약 1시간 후 마감 → 개찰 → 최고가매수신고인 발표</li><li>패찰 시 보증금 즉시 반환</li></ol>' +
+        '<div class="cb-note">⚠ 입찰가는 수정 불가(새 용지 작성) · 금액란에 0 하나 더 쓰는 실수가 가장 흔합니다.</div>',
+      rel: ['대리입찰 준비물', '입찰보증금은 얼마?', '낙찰 후 절차는?'] },
+    { k: /대리/, t: '👥 대리입찰',
+      a: '<ul><li>본인 <b>인감도장이 날인된 위임장</b> + 본인 <b>인감증명서</b></li><li>대리인 신분증 · 도장</li><li>법인: 법인등기사항증명서, 대표자 위임 서류 등 추가</li></ul>' +
+        '<div class="cb-note">서류 미비 시 낙찰이 되어도 무효 처리될 수 있으니 해당 법원 안내를 미리 확인하세요.</div>',
+      rel: ['입찰 준비물'] },
+    { k: /매각\s*허가|잔금|대금\s*(납부|지급)|낙찰\s*(후|받으면|되면)|소유권\s*이전/, t: '📅 낙찰 후 절차',
+      a: '<ol><li>매각기일: 최고가매수신고인 결정</li><li>약 1주 후 <b>매각허가결정</b></li><li>약 1주 즉시항고 기간 → 허가 <b>확정</b></li>' +
+        '<li><b>대금지급기한</b> 통지(보통 확정 후 1개월 이내) → 잔금 납부 = 소유권 취득</li><li>소유권이전등기·말소 촉탁 → 인도명령/명도</li></ol>',
+      rel: ['명도는 어떻게 해?', '경락잔금대출'] },
+    { k: /차순위/, t: '🥈 차순위매수신고',
+      a: '<p>최고가매수신고액에서 <b>보증금을 뺀 금액보다 높게</b> 입찰한 사람은 매각기일 종결 전까지 차순위매수신고를 할 수 있습니다. 최고가매수인이 대금을 내지 않으면 재매각 없이 차순위자에게 매각허가 여부를 결정합니다.</p>',
+      rel: ['재매각이 뭐야?'] },
+    { k: /재매각/, t: '♻️ 재매각',
+      a: '<p>낙찰자가 대금을 납부하지 않아 다시 매각하는 절차입니다. 이전 낙찰자의 보증금은 몰수되며, 재매각 기일에는 <b>보증금이 20~30%</b>로 상향되는 경우가 많습니다. 이전 낙찰자가 미납한 이유(숨은 하자)를 반드시 확인하세요.</p>',
+      rel: ['차순위매수신고', '입찰보증금은 얼마?'] },
+    { k: /지분|공유자/, t: '🧩 지분 경매 주의점',
+      a: '<ul><li>다른 공유자에게 <b>공유자 우선매수권</b>이 있어 최고가로 낙찰돼도 빼앗길 수 있음</li><li>단독 사용·대출이 어렵고, 처분하려면 공유물분할 소송 등이 필요</li></ul>' +
+        '<div class="cb-note">본 포털의 점수 모델은 지분·유치권 등 위험 키워드가 있으면 권리 점수를 −15점 처리합니다.</div>',
+      rel: ['점수는 어떻게 계산해?'] },
+    { k: /취득세|세금|양도세|등록세/, t: '🧮 경매 취득 시 세금',
+      a: '<ul><li><b>주택(1주택 기준)</b>: 6억 이하 1% · 6~9억 1~3% · 9억 초과 3% (+지방교육세 등)</li>' +
+        '<li><b>주택 외(상가·오피스텔·토지)</b>: 약 4.6%</li><li>다주택·조정대상지역 등은 중과세율 적용 가능</li>' +
+        '<li>매도 시 <b>양도소득세</b>: 보유기간·주택 수에 따라 크게 달라짐 (단기 매도 시 고세율)</li></ul>',
+      rel: ['대전 1위 입찰비용 계산', '1억 낙찰 시 비용 계산'] },
+    { k: /대출|경락\s*잔금|ltv|dsr/i, t: '🏦 경락잔금대출',
+      a: '<p>낙찰 후 잔금을 마련하기 위한 대출로, 낙찰가·감정가 중 낮은 금액의 일정 비율 내에서 실행되며 <b>LTV·DSR 등 대출 규제</b>가 그대로 적용됩니다. 입찰 전에 대출 가능 금액을 미리 상담받아 두세요(대금 미납 시 보증금 몰수).</p>',
+      rel: ['낙찰 후 절차는?'] },
+    { k: /안전\s*마진|입찰가\s*(산정|정하|결정|얼마)|얼마에\s*(써|입찰)|수익률/, t: '🎯 안전마진 & 입찰가 산정',
+      a: '<ol><li>국토부 실거래가·급매 호가로 <b>현실 매도가</b> 산정 (감정가 그대로 믿지 않기)</li><li>부대비용 합산: 취득세, 등기·법무비, 명도비, 수리비, 미납관리비, 대출이자</li>' +
+        '<li>목표 수익(예: 10~20%) 차감 → <b>최대 입찰가</b></li><li>최근 유사 물건 낙찰가율 참고해 최종 결정</li></ol>' +
+        '<p>공식: <code>최대 입찰가 = 예상 매도가 − 목표 수익 − 부대비용</code></p>',
+      rel: ['대전 1위 입찰비용 계산', '유찰이 뭐야?'] },
+    { k: /점수\s*(는|가|를)?\s*(어떻게|기준|산정|계산|의미|뭐)|평가\s*(모델|기준|방식)|선정\s*기준|어떻게\s*(선정|뽑|골랐|계산)|점수\s*모델/, t: '📊 100점 가치평가 모델 (대전 TOP 50)',
+      a: '<table><tr><th>항목</th><th>배점</th><th>기준</th></tr>' +
+        '<tr><td>가격 메리트</td><td>40</td><td>할인율 60%↑ 40 · 45%↑ 32 · 30%↑ 25 · 15%↑ 18 · 그 외 10</td></tr>' +
+        '<tr><td>권리 안전성</td><td>30</td><td>특수권리 키워드 없음 30 / 지분·유치권 등 위험 −15</td></tr>' +
+        '<tr><td>용도·환금성</td><td>20</td><td>아파트 20 · 오피스텔/빌라 16 · 단독 14 · 상가 12 · 대지 10 · 기타 7</td></tr>' +
+        '<tr><td>입지(자치구)</td><td>10</td><td>유성 10 · 서구 9 · 중구 7 · 동구/대덕 6</td></tr></table>' +
+        '<div class="cb-note">권리 안전성은 법원 공고 비고란의 키워드 기준 1차 선별입니다. 실제 입찰 전 등기부·매각물건명세서로 최종 확인하세요. 전국 추천 물건은 별도 기준(권역 대표성·할인율)으로 점수가 부여되었습니다.</div>',
+      rel: ['대전 TOP 5', '소멸주의란?'] },
+    { k: /법원\s*(목록|리스트|어디|위치|몇|정보|안내)|입찰\s*법정|관할\s*법원|60개/, t: '🏛 전국 60개 경매 입찰법원',
+      a: '<p>경매 입찰은 <b>물건 소재지 관할 법원</b>에 직접 출석하는 것이 원칙입니다 (본원 18 + 지원 42 = 60곳).</p>' +
+        '<ul><li>수도권 16 · 영남권 19 · 충청·강원권 15 · 호남·제주권 10</li><li>대전지방법원: 본원 + 홍성·논산·천안·공주·서산지원</li></ul>',
+      rel: ['입찰 준비물'], act: { label: '🏛 법원 탭 열기', act: 'tab', arg: 'courts' } },
+    { k: /다운|파일|엑셀|xlsx|보고서|ppt|파워포인트|마크다운|자료/i, t: '📥 보고서 · 데이터 파일',
+      a: '<ul><li><a href="대전광역시_경매물건_TOP50_추천.xlsx">대전광역시_경매물건_TOP50_추천.xlsx</a></li>' +
+        '<li><a href="대한민국법원_전국경매물건_정리_및_권역별추천.xlsx">대한민국법원_전국경매물건_정리_및_권역별추천.xlsx</a></li>' +
+        '<li><a href="부동산_경매_종합_분석_보고서.pptx">부동산_경매_종합_분석_보고서.pptx</a></li>' +
+        '<li><a href="부동산_경매_종합_분석_보고서.html" target="_blank">부동산_경매_종합_분석_보고서.html</a></li>' +
+        '<li><a href="부동산_경매_종합_분석_보고서.md">부동산_경매_종합_분석_보고서.md</a></li></ul>',
+      rel: [], act: { label: '📥 다운로드 탭 열기', act: 'tab', arg: 'downloads' } },
+    { k: /출처|기준일|언제\s*(데이터|수집)|데이터\s*(는|가)?\s*(어디|언제|몇|범위)|최신/, t: 'ℹ️ 데이터 출처 · 범위',
+      a: '<ul><li>출처: 대한민국 법원경매정보 (courtauction.go.kr)</li><li>대전광역시 522건 수집 → 중복 정리 311건 → 100점 모델로 TOP 50 선정</li>' +
+        '<li>전국 1,287건 수집 → 권역별 베스트 18건 + 추가 추천 40건</li><li>이 챗봇에 내장된 물건: <b>' + DATA.length + '건</b></li></ul>' +
+        '<div class="cb-note">매각기일 변경·취하·낙찰이 수시로 발생하므로 최신 상태는 대법원 사이트에서 사건번호로 확인하세요.</div>',
+      rel: ['통계 요약'], act: { label: '🔗 대법원 경매정보', act: 'court' } },
+    { k: /공매|온비드|캠코/, t: '🔄 경매 vs 공매',
+      a: '<table><tr><th></th><th>법원 경매</th><th>공매(온비드)</th></tr><tr><td>주관</td><td>법원</td><td>한국자산관리공사(캠코)</td></tr>' +
+        '<tr><td>입찰</td><td>법정 현장 입찰</td><td>온라인 입찰</td></tr><tr><td>명도</td><td>인도명령 가능</td><td>인도명령 없음 → 명도소송</td></tr></table>',
+      rel: ['명도는 어떻게 해?'] },
+    { k: /경매(가|란|이란)?\s*(뭐|무엇)|처음|초보|입문|기초/, t: '🔰 부동산 경매 첫걸음',
+      a: '<ol><li><b>물건 검색</b>: 할인율·용도·지역으로 후보 압축 (이 챗봇에 "유성구 아파트 1억 이하"처럼 물어보세요)</li>' +
+        '<li><b>권리분석</b>: 말소기준권리 찾기 → 인수 권리 유무 확인</li><li><b>현장 임장</b>: 시세·점유자·관리비 확인</li>' +
+        '<li><b>입찰가 산정</b>: 안전마진 공식 적용</li><li><b>입찰·낙찰·잔금·명도</b></li></ol>',
+      rel: ['소멸주의란?', '말소기준권리란?', '입찰 준비물', '대전 TOP 5'] }
+  ];
+
+  function findKB(q) { return KB.filter(function (e) { return e.k.test(q); }); }
+
+  /* ------------------------------------------------------------------ */
+  /* 5-B. 심층 의사결정 · 실전 컨설팅 추론 엔진 (고도화)                    */
+  /* ------------------------------------------------------------------ */
+  function safeStatsSummary() {
+    var safeCnt = DATA.filter(function (d) { return !isRisky(d); }).length;
+    var riskCnt = DATA.length - safeCnt;
+    return { safeCnt: safeCnt, riskCnt: riskCnt, total: DATA.length };
+  }
+
+  function expertConsultantReply(q) {
+    var st = safeStatsSummary();
+
+    // 1. 소멸주의 예외 · 비(非)소멸주의/인수 조건 물건 제외 여부 판단
+    if ((/소멸\s*주의|인수\s*주의|인수\s*조건|특수\s*권리|안전하지/.test(q) &&
+         /아니면|아닌|제외|포기|피해|피하|거르|걸러|고려|위험|괜찮|좋은|맞아|할까|말까|들어가|입찰해|초보/.test(q)) ||
+        /소멸\s*주의\s*상태가\s*아니/.test(q)) {
+      var html1 = '<h5>🎯 [전문가 자문] 소멸주의가 아닌(인수 조건 있는) 물건, 제외해야 할까요?</h5>' +
+        '<div class="cb-crit">💡 <b>핵심 결론</b>: <b>초보자·실수요자라면 "1차 고려 대상에서 과감히 제외"하는 것이 정답</b>입니다.<br>' +
+        '단, <b>"인수해야 할 금액이 정확한 숫자로 확정되는 경우"</b>에는 입찰가를 그만큼 낮춰 써서 경쟁 없이 낙찰받는 <b>고수익 기회(조건부 공략)</b>가 됩니다.</div>' +
+        '<p>법원경매의 꽃은 <b>민사집행법 제91조(소멸주의)</b>에 따라 전 소유자의 빚을 모두 지우고 깨끗한 소유권을 싸게 취득하는 것입니다. 따라서 소멸주의가 완벽히 적용되지 않는 물건은 아래 <b>3단계 판별 기준표</b>로 즉시 분류해야 합니다.</p>' +
+        '<table>' +
+        '<tr><th>구분</th><th>해당하는 권리 유형</th><th>투자 판단 및 실전 전략</th></tr>' +
+        '<tr><td><b style="color:#e53e3e">🔴 즉시 제외</b><br><small>(초보·숙련 불문 위험)</small></td>' +
+        '<td>• <b>선순위 가처분 / 소유권이전 가등기</b><br>• 배당요구 안 한 <b>거액 선순위 임차인</b><br>• <b>진성 유치권</b>(대규모 공사비) / <b>성립 확실한 법정지상권</b></td>' +
+        '<td>낙찰대금을 다 내고도 <b>소유권을 상실</b>하거나 시세보다 큰 빚을 떠안게 됩니다. <b>미련 없이 고려 대상에서 제외</b>하세요.</td></tr>' +
+        '<tr><td><b style="color:#d69e2e">🟡 조건부 공략</b><br><small>(인수액 계량화 가능)</small></td>' +
+        '<td>• 배당요구 한 선순위 임차인의 <b>일부 미배당 보증금</b><br>• 경매기입등기 이후 점유한 <b>허위 유치권</b><br>• 금액이 확인된 <b>미납 공용관리비</b></td>' +
+        '<td>일반 입찰자들이 무서워 포기하므로 유찰이 거듭됩니다. <b>[내 입찰가 + 인수금액] &lt; 급매 시세×85%</b> 공식이 성립하면 <b>단독 낙찰 찬스</b>가 됩니다.</td></tr>' +
+        '<tr><td><b style="color:#2f855a">🟢 적극 공략</b><br><small>(100% 완전 소멸주의)</small></td>' +
+        '<td>• 말소기준권리보다 늦게 전입한 <b>후순위 임차인</b><br>• <b>소유자(채무자) 거주</b> 및 특수권리 없음</td>' +
+        '<td>임차인이 보증금을 못 받더라도 <b>낙찰자 인수 책임 0원!</b> 인도명령으로 2~4주 내 명도 가능한 <b>최우선 추천 대상</b>입니다.</td></tr>' +
+        '</table>' +
+        '<div class="cb-note">📊 <b>현재 포털 데이터 현황</b>: 내장된 추천 매물 <b>' + st.total + '건</b> 중 완전 소멸주의 안전 물건은 <b>' + st.safeCnt + '건</b>, 권리상 주의 물건은 <b>' + st.riskCnt + '건</b>입니다. 입문 단계에서는 아래 버튼으로 <b>권리 안전 물건</b>만 필터링해 보시는 것을 강력히 권장합니다.</div>';
+      return reply(html1, ['소멸주의 안전 물건 추천 5개', '선순위 임차인 구별법', '유찰 많이 된 물건 위험해?', '대전 TOP 5'], null, 'advisory');
+    }
+
+    // 2. 선순위 임차인 · 대항력 · 세입자 인수 위험 판단
+    if (/임차인|세입자|대항력|전입/.test(q) && /제외|피해|위험|고려|괜찮|어떻게|확인|구별|무조건|인수|보증금/.test(q)) {
+      var html2 = '<h5>🏠 [심층 권리분석] 임차인(세입자) 있는 경매 물건, 입찰해도 될까요?</h5>' +
+        '<div class="cb-crit">💡 <b>핵심 결론</b>: 세입자가 있다고 무조건 피할 필요는 없습니다! <b>① 말소기준권리 대비 전입일(선·후순위)</b>과 <b>② 배당요구 여부</b>만 확인하면 인수 금액이 <b>0원</b>인지 정확히 판별됩니다.</div>' +
+        '<table>' +
+        '<tr><th>임차인 유형</th><th>전입일 vs 말소기준권리</th><th>배당요구</th><th>낙찰자 인수 여부 및 대처</th></tr>' +
+        '<tr><td><b>① 후순위 임차인</b></td><td>말소기준권리보다 <b>늦음</b></td><td>무관</td><td><b style="color:#2f855a">✅ 인수 0원 (100% 안전)</b><br><small>대항력 없음 · 인도명령 대상</small></td></tr>' +
+        '<tr><td><b>② 선순위 (전액배당)</b></td><td>말소기준권리보다 <b>빠름</b></td><td>종기 내 <b>신청 O</b></td><td><b style="color:#2f855a">✅ 인수 0원 (안전)</b><br><small>낙찰대금에서 보증금 전액 배당받고 퇴거</small></td></tr>' +
+        '<tr><td><b>③ 선순위 (일부미배당)</b></td><td>말소기준권리보다 <b>빠름</b></td><td>종기 내 <b>신청 O</b></td><td><b style="color:#d69e2e">⚠️ 미배당 차액만 인수</b><br><small>입찰가에서 미배당액만큼 빼고 입찰하면 안전</small></td></tr>' +
+        '<tr><td><b>④ 선순위 (배당미신청)</b></td><td>말소기준권리보다 <b>빠름</b></td><td><b>신청 X</b></td><td><b style="color:#e53e3e">🔴 보증금 전액 인수 (초보 제외!)</b><br><small>낙찰가 외에 보증금 전액을 별도로 물어줘야 함</small></td></tr>' +
+        '</table>' +
+        '<ul><li><b>3초 판별 팁</b>: 대법원 <b>매각물건명세서</b> 좌측 상단의 <code>[최선순위 설정일자]</code>보다 임차인의 <code>[전입신고일]</code>이 늦다면 묻지도 따지지도 않고 <b>보증금 인수 0원(안전)</b>입니다!</li></ul>';
+      return reply(html2, ['소멸주의란?', '명도는 어떻게 해?', '소멸주의 안전 물건 추천 5개'], null, 'advisory');
+    }
+
+    // 3. 다회 유찰(3~5회 이상) · 반값/초특가 할인 물건의 함정과 기회
+    if (/유찰|할인|반값|초특가|떨어진/.test(q) && /많이|위험|함정|이유|왜|제외|고려|괜찮|좋은|들어가|사도/.test(q)) {
+      var html3 = '<h5>📉 [투자 전략] 유찰이 많이 된 초특가 물건, 기회일까요 함정일까요?</h5>' +
+        '<div class="cb-crit">💡 <b>핵심 결론</b>: 3회 이상 유찰(할인율 50~80%↑)된 물건은 <b>"권리 하자로 인한 함정"</b>과 <b>"감정가 거품이 빠진 진짜 저평가 보석"</b>이 섞여 있습니다. 아래 4가지 원인 중 어디에 해당하는지만 확인하면 됩니다.</div>' +
+        '<table>' +
+        '<tr><th>다회 유찰 원인</th><th>특징 및 확인처</th><th>투자자 대응 전략</th></tr>' +
+        '<tr><td><b>① 권리 하자형</b><br><small>(선순위 보증금·유치권·지분)</small></td><td>매각물건명세서 비고란에 인수 조건 명시</td><td><b style="color:#e53e3e">초보자 즉시 제외</b> (인수금이 최저가보다 큰 경우가 많음)</td></tr>' +
+        '<tr><td><b>② 감정가 거품형</b><br><small>(고점 감정 후 시세 조정)</small></td><td>권리상 하자 전혀 없음 (`안전(소멸주의)`)</td><td><b style="color:#2f855a">🔥 최우선 공략 대상!</b> 급매 시세 대비 15~25% 저렴해졌을 때 입찰</td></tr>' +
+        '<tr><td><b>③ 관리비·수리비 부담형</b><br><small>(장기 방치·연체)</small></td><td>노후 단지 또는 장기 공실</td><td>미납 공용관리비와 인테리어 비용(평당 150~200만)을 입찰가에서 차감 후 공략</td></tr>' +
+        '<tr><td><b>④ 전 낙찰자 미납(재매각)</b><br><small>(입찰가 오기재·대출 실패)</small></td><td>보증금이 20~30%로 상향 공고됨</td><td>물건 하자가 아닌 단순 실수라면 <b>경쟁률이 뚝 떨어지는 절호의 기회!</b></td></tr>' +
+        '</table>' +
+        '<div class="cb-note">💡 본 포털의 <b>가치평가 95점 이상 매물</b>들은 ①번(권리 하자)을 제외하고 ②번(권리 안전 + 다회 유찰 가격 메리트)에 해당하는 알짜 매물만 선별한 것입니다.</div>';
+      return reply(html3, ['할인율 70% 이상 안전 물건 5개', '대전 TOP 5', '안전마진 계산법'], null, 'advisory');
+    }
+
+    // 4. 명도 저항 · 점유자 퇴거 거부 · 과도한 이사비 요구 시 실전 대처법
+    if (/명도|점유자|집주인|소유자|이사\s*비|인도\s*명령|강제\s*집행/.test(q) && /안\s*나가|버티|거부|어떻게|협상|얼마|위험|힘들|어려|노하우|팁|해결/.test(q)) {
+      var html4 = '<h5>🚚 [실전 명도 매뉴얼] 점유자가 안 나가거나 과도한 이사비를 요구할 때 대처법</h5>' +
+        '<div class="cb-crit">💡 <b>핵심 결론</b>: 대한민국 법원경매는 <b>부동산 인도명령 제도</b>가 있어 소송 없이 <b>잔금 납부 후 평균 1~2개월 내 98% 이상 원만히 해결</b>됩니다. 법적 절차(인도명령)와 협상(이사비)을 동시에 진행하는 것이 핵심입니다.</div>' +
+        '<ol>' +
+        '<li><b>1단계 [잔금 당일] 인도명령 신청서 즉시 접수</b>: 협상이 잘 될 것 같아도 잔금 납부 당일 무조건 법원에 인도명령을 신청하세요. (약 2~3주 후 결정문 발급 · 법적 압박 수단 확보)</li>' +
+        '<li><b>2단계 [첫 접촉] 정중한 안내문 + 심리적 마지노선 제시</b>: <i>"인도명령 결정 후 강제집행이 진행되면 집행비용(약 250만 원)까지 채무자/점유자 부담이 됩니다. 그 전에 원만히 이주하시면 그 비용의 일부를 이사 지원금으로 드리겠습니다"</i>라고 명분을 줍니다.</li>' +
+        '<li><b>3단계 [적정 이사비 기준]</b>: 소형(10~18평) <b>50~100만 원</b> · 중형(24~34평) <b>100~200만 원</b> 선이 실무 표준입니다. 과도한 요구 시 <b>집행관 동행 강제집행 계고(예고)</b>를 1회 진행하면 대부분 즉시 협의에 응합니다.</li>' +
+        '<li><b>4단계 [이사 당일 철칙]</b>: 이사비는 절대 미리 주지 마시고, <b>이삿짐 완전 반출 + 관리비·도시가스·전기·수도 정산 영수증 확인 + 도어락 비밀번호 인계</b> 현장에서 지급하세요.</li>' +
+        '</ol>';
+      return reply(html4, ['미납 관리비 누가 내?', '대항력이 뭐야?', '초보자 경매 진행 순서'], null, 'advisory');
+    }
+
+    // 5. 미납 관리비 인수 범위(공용 vs 전유 · 연체료) 대법원 판례 기준
+    if (/관리비|연체료|공과금/.test(q)) {
+      var html5 = '<h5>🏢 [대법원 판례 기준] 전 소유자의 미납 관리비, 낙찰자가 다 내야 하나요?</h5>' +
+        '<div class="cb-crit">💡 <b>핵심 결론 (대법원 2001다8677 전원합의체 판결)</b>: 낙찰자는 미납 관리비 전액을 내는 것이 아니라, <b>오직 "최근 3년 이내의 공용부분 관리비 원금"만 인수</b>합니다!</div>' +
+        '<table>' +
+        '<tr><th>항목 구분</th><th>세부 내역</th><th>낙찰자 인수 여부</th></tr>' +
+        '<tr><td><b>공용부분 관리비</b></td><td>일반관리비, 청소비, 경비비, 소독비, 승강기유지비, 공용 전기·수도료</td><td><b style="color:#d69e2e">⚠️ 낙찰자 인수 O</b> (단, 3년 이내분만)</td></tr>' +
+        '<tr><td><b>전유부분 관리비</b></td><td>세대 내부에서 쓴 개별 전기료, 수도료, 가스료, 개별난방비, TV수신료</td><td><b style="color:#2f855a">✅ 인수 X (지급 의무 없음)</b></td></tr>' +
+        '<tr><td><b>연체료 (연체이자)</b></td><td>미납 관리비에 붙은 연체 가산금 (통상 연 12~15%)</td><td><b style="color:#2f855a">✅ 인수 X (공용부분 연체료도 면책!)</b></td></tr>' +
+        '<tr><td><b>3년 경과 장기 체납분</b></td><td>매각대금 완납일 기준 3년 이전에 발생한 관리비 (민법 제163조 단기소멸시효)</td><td><b style="color:#2f855a">✅ 인수 X (시효 소멸로 면책!)</b></td></tr>' +
+        '</table>' +
+        '<div class="cb-note">💡 <b>실전 협상 팁</b>: 관리사무소가 전유부분이나 연체료까지 한꺼번에 요구할 경우, <i>"대법원 판례(2001다8677)에 따라 공용부분 원금(3년 이내분) 내역서를 분리해 주시면 즉시 정산하겠다"</i>고 요청하시면 전체 청구액의 40~60%로 줄어듭니다.</div>';
+      return reply(html5, ['명도는 어떻게 해?', '안전마진 계산법', '대전 TOP 5'], null, 'advisory');
+    }
+
+    // 6. 유치권 · 법정지상권 · 지분경매 · 가처분/가등기 특수권리 공략 vs 회피
+    if (/유치권|법정\s*지상권|지상권|지분|공유자|가처분|가등기/.test(q) && /제외|피해|위험|고려|괜찮|좋은|어떻게|공략|해결|파악|구별/.test(q)) {
+      var html6 = '<h5>⚠️ [특수권리 진단] 유치권 · 법정지상권 · 지분 · 가처분 물건 판단 기준</h5>' +
+        '<div class="cb-crit">💡 <b>핵심 결론</b>: 초보자는 아래 특수권리 키워드가 있는 물건을 <b>전면 제외</b>하는 것이 안전하며, 중·고수는 <b>"성립 요건 불비(허위 신고)"</b>가 확인될 때만 반값 이하에 공략합니다.</div>' +
+        '<ul>' +
+        '<li><b>🔒 유치권 신고 물건</b>: 전체 유치권 신고의 약 70%는 허위·과장입니다. 특히 <b>경매개시결정 기입등기 이후에 점유를 시작</b>했거나, 건축주와 짜고 만든 급조된 공사계약서는 낙찰자에게 대항할 수 없습니다. (단, 소송·명도 시간이 걸리므로 초보자는 제외 권장)</li>' +
+        '<li><b>🏗 법정지상권 물건</b>: 최초 저당권 설정 당시 <b>토지와 건물이 동일인 소유</b>였어야 성립합니다. 나대지 상태에서 근저당 설정 후 지어진 건물은 법정지상권이 성립하지 않습니다.</li>' +
+        '<li><b>🧩 지분 경매 물건</b>: 다른 공유자가 개찰 당일 <b>공유자 우선매수권</b>을 행사해 최고가 낙찰자의 지위를 가져갈 수 있고, 낙찰 후에도 공유물분할 협상/소송이 필요합니다.</li>' +
+        '<li><b>🚫 선순위 가처분·소유권이전 가등기</b>: 허위 가능성이 극히 낮고 패소 시 소유권을 잃으므로 <b>숙련자도 원칙적으로 제외</b>합니다.</li>' +
+        '</ul>';
+      return reply(html6, ['소멸주의 안전 물건 추천 5개', '소멸주의란?', '대전 TOP 5'], null, 'advisory');
+    }
+
+    return null;
+  }
+
+  function enhanceKBWithIntent(q, e) {
+    var isDecision = /제외|포기|피해야|거르|걸러|안\s*하는|하지\s*말|들어가도|입찰해도|괜찮|좋은|맞아|위험|고려\s*대상/.test(q);
+    var isHowTo = /어떻게|방법|절차|요령|팁|노하우|대처|해결|확인/.test(q);
+    var isWhy = /왜|이유|원인|배경/.test(q);
+    var prefix = '';
+    if (isDecision) {
+      prefix = '<div class="cb-crit">🎯 <b>질문 의도 맞춤 판단</b>: 질문하신 사안은 <b>"권리 인수 리스크와 내 안전마진 범위 내에서 통제 가능한가"</b>가 핵심입니다. 초보자라면 불확실성이 있는 물건은 제외하고 <b>100% 소멸주의 안전 물건</b>으로 접근하시는 것이 안전합니다.</div>';
+    } else if (isHowTo) {
+      prefix = '<div class="cb-crit">🧭 <b>실전 실행 포인트</b>: 아래 핵심 원칙을 확인하신 뒤, 입찰 전 <b>등기부등본 · 매각물건명세서 · 현장 임장</b> 3단계로 교차 검증하세요.</div>';
+    } else if (isWhy) {
+      prefix = '<div class="cb-crit">💡 <b>원인 및 메커니즘 분석</b>: 법원경매에서 해당 현상이 발생하는 법적·시장적 배경과 핵심 원리는 다음과 같습니다.</div>';
+    }
+    return '<h5>' + e.t + '</h5>' + prefix + e.a;
+  }
+
+  function smartFallbackReply(q) {
+    if (S.focusItem) {
+      var resFocus = answerForItem(S.focusItem, q, false);
+      if (resFocus) return resFocus;
+    }
+    var st = safeStatsSummary();
+    var html = '<h5>🤖 경매 AI 어드바이저 종합 안내</h5>' +
+      '<div class="cb-crit">질문하신 <b>"' + esc(q) + '"</b>에 대해 법원경매 핵심 판단 기준으로 안내해 드립니다.</div>' +
+      '<ul>' +
+      '<li><b>1. 권리 안전성 최우선 원칙</b>: 입문·실수요 단계에서는 인수 조건(선순위 임차인 미배당·유치권·지분 등)이 있는 물건은 제외하고, <b>민사집행법 제91조(소멸주의)</b>에 따라 잔금 완납 시 모든 담보권이 깨끗이 말소되는 물건을 선택하세요. (현재 포털 내 안전 물건 <b>' + st.safeCnt + '건</b>)</li>' +
+      '<li><b>2. 가격 메리트 & 실거래 검증</b>: 감정평가액은 과거 시점이므로 반드시 <b>현재 최저 급매 호가</b>를 기준으로 <code>급매가 − 목표수익 − (취득세+미납공용관리비+명도비+수리비)</code> 이하로 입찰가를 산정하세요.</li>' +
+      '<li><b>3. 맞춤형 매물 탐색 및 상담</b>: 아래 버튼을 누르시거나 구체적인 조건(예: <i>"유성구 아파트 1억 이하"</i>, <i>"소멸주의 아니면 제외해야 해?"</i>, <i>"미납 관리비 누가 내?"</i>)을 입력해 보세요!</li>' +
+      '</ul>' +
+      (aiEnabled() ? '' : '<div class="cb-note">⚙️ 상단 설정(⚙️)에서 Gemini API 키를 등록하면 모든 자유 대화에 생성형 AI가 실시간 심층 답변합니다.</div>');
+    return reply(html, ['대전 TOP 5', '소멸주의 안전 물건 추천 5개', '초보자 경매 진행 순서', '미납 관리비 누가 내?'], null, 'fallback');
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 6. 의도 라우터                                                         */
+  /* ------------------------------------------------------------------ */
+  function findRefs(q) {
+    var refs = [], m, re;
+    re = /(\d{4})\s*타경\s*(\d+)/g;
+    while ((m = re.exec(q)) !== null) {
+      var cn = m[1] + '타경' + m[2];
+      DATA.forEach(function (d) { if (d.case_no === cn && refs.indexOf(d) < 0) refs.push(d); });
+    }
+    re = /(\d+)\s*번(?!지|길|째\s*줄)/g;
+    while ((m = re.exec(q)) !== null) { var it = S.all[parseInt(m[1], 10) - 1]; if (it && refs.indexOf(it) < 0) refs.push(it); }
+    var regPrefix = '대전 ';
+    if (/수도권/.test(q)) regPrefix = '수도권 ';
+    else if (/부울경/.test(q)) regPrefix = '부울경 ';
+    else if (/대경/.test(q)) regPrefix = '대경권 ';
+    else if (/영남/.test(q)) regPrefix = '영남권 ';
+    else if (/충청/.test(q)) regPrefix = '충청권 ';
+    else if (/호남/.test(q)) regPrefix = '호남권 ';
+    else if (/강원|제주/.test(q)) regPrefix = '강원·제주 ';
+    else if (/전국/.test(q)) regPrefix = '전국 베스트 ';
+    re = /(\d+)\s*위/g;
+    while ((m = re.exec(q)) !== null) {
+      var label = regPrefix + m[1] + (regPrefix === '전국 베스트 ' ? '' : '위');
+      var hit = DATA.filter(function (d) { return d.rank === label || d.rank === (regPrefix + m[1] + '위'); })[0];
+      if (hit && refs.indexOf(hit) < 0) refs.push(hit);
+    }
+    return refs;
+  }
+
+  function reply(html, chips, text, intent) { return { html: html, chips: chips || [], text: text || stripHtml(html), intent: intent }; }
+
+  function helpReply() {
+    return reply('<h5>👋 안녕하세요! 경매 AI 상담봇입니다.</h5>' +
+      '<p>이 포털에 내장된 <b>' + DATA.length + '건</b>(대전 TOP ' + catCount('daejeon') + ' · 전국 베스트 ' + catCount('nationwide_best') +
+      ' · 전국 추가 ' + catCount('nationwide_all') + ')의 경매 물건을 바탕으로 답변해 드려요.</p>' +
+      '<ul><li>🔎 <b>물건 검색</b>: "유성구 아파트 1억 이하", "할인율 70% 이상 5개", "11월 매각 임박"</li>' +
+      '<li>🏠 <b>상세 조회</b>: "대전 3위", "2025타경503878", 검색 후 "2번 자세히"</li>' +
+      '<li>⚖️ <b>비교</b>: "1위 2위 비교", "1번 3번 비교"</li><li>💰 <b>비용 계산</b>: "대전 1위 입찰비용", "1억 낙찰 시 비용"</li>' +
+      '<li>📚 <b>용어·절차</b>: 소멸주의, 말소기준권리, 대항력, 유치권, 명도, 입찰 준비물…</li><li>📊 <b>통계</b>: "통계 요약", "유성구 현황"</li></ul>' +
+      '<div class="cb-note">검색 결과 카드를 클릭하면 상세 팝업이 열립니다. "그중 제일 싼 거"처럼 이어서 좁혀 물어볼 수도 있어요.</div>',
+      ['대전 TOP 5', '🏦 경락잔금대출 조건 & 방공제', '🎯 AI 예상 낙찰가율', '📋 체납관리비 대법원 판례', '📜 점유자 명도 & 인도명령', '소멸주의란?'], null, 'help');
+  }
+
+  function searchReply(q, base, c, refine) {
+    var res = applyCriteria(base, c);
+    S.all = res; S.crit = c; S.shown = 0;
+    if (!res.length) {
+      var chips = ['대전 TOP 5', '할인율 높은 순 5개'];
+      if (c.maxPrice != null) chips.unshift(q.replace(/(\d+(?:\.\d+)?\s*억[\s\d천백만]*|\d+\s*천\s*만?|[\d,]+\s*만)\s*원?\s*(이하|이내|미만|까지|아래)?/g, '').trim() || '전체 물건 추천');
+      return reply('<div class="cb-crit">' + esc(describe(c)) + '</div><p>😥 조건에 맞는 물건이 없습니다.</p>' +
+        '<p>이 챗봇은 포털에 내장된 <b>' + DATA.length + '건</b>(대전 TOP 50 + 전국 추천 58건) 안에서 찾습니다. 조건을 조금 완화해 보세요.</p>', chips, null, 'search');
+    }
+    var n = Math.min(c.limit || PAGE, res.length);
+    var html = showSlice(n, (refine ? '이전 결과 중 ' : '') + '<b>' + res.length + '건</b>을 찾았어요' + (res.length > n ? ' — 상위 ' + n + '건입니다.' : '.'));
+    return reply(html, resultChips(), null, 'search');
+  }
+
+  function showSlice(n, head) {
+    var res = S.all, from = S.shown, to = Math.min(from + n, res.length);
+    var slice = res.slice(from, to);
+    var avg = res.reduce(function (s, d) { return s + d.discount_val; }, 0) / res.length;
+    var past = slice.filter(isPast).length;
+    var html = (from === 0 ? '<div class="cb-crit">' + esc(describe(S.crit)) + '</div><p>🔎 ' + head + '</p>' : '<p>📄 ' + (from + 1) + '~' + to + '번째 결과입니다.</p>') +
+      slice.map(function (it, i) { return itemCard(it, from + i); }).join('') +
+      (from === 0 ? '<div class="cb-note">평균 할인율 ' + avg.toFixed(1) + '% · 최저가 최소 ' + won(Math.min.apply(null, res.map(function (d) { return d.min_price; }))) +
+        (past ? ' · ⚠ ' + past + '건은 매각기일 경과(변경 여부 확인 필요)' : '') +
+        '<br>※ "권리 안전"은 법원 공고 비고란 키워드 기준 1차 선별입니다. 입찰 전 매각물건명세서·등기부를 확인하세요.</div>' : '');
+    S.shown = to;
+    return html;
+  }
+
+  function resultChips() {
+    var ch = [];
+    if (S.shown < S.all.length) ch.push({ label: '➕ 더 보기 (' + (S.all.length - S.shown) + '건 남음)', act: 'more' });
+    if (S.all.length) ch.push('1번 입찰비용 계산');
+    if (S.all.length >= 2) ch.push('1번 2번 비교');
+    ch.push({ label: '🗂 탐색기에서 보기', act: 'explorer' });
+    return ch;
+  }
+
+  function compareReply(items) {
+    items = items.slice(0, 3);
+    var mark = ['①', '②', '③'];
+    var row = function (lbl, f) { return '<tr><th>' + lbl + '</th>' + items.map(function (it) { return '<td>' + f(it) + '</td>'; }).join('') + '</tr>'; };
+    var best = function (f, desc) { return items.reduce(function (a, b) { return (desc ? b[f] > a[f] : b[f] < a[f]) ? b : a; }); };
+    var cheap = best('min_price', false), disc = best('discount_val', true), top = best('score', true);
+    var idx = function (it) { return mark[items.indexOf(it)]; };
+    var html = '<h5>⚖️ 물건 비교</h5><table>' +
+      row('구분', function (it) { return '<b>' + mark[items.indexOf(it)] + ' ' + esc(it.rank) + '</b>'; }) +
+      row('소재지', function (it) { return esc(cut(it.address, 34)); }) +
+      row('용도', function (it) { return esc(it.usage); }) +
+      row('감정가', function (it) { return won(it.appraisal); }) +
+      row('최저가', function (it) { return '<b style="color:#e53e3e">' + won(it.min_price) + '</b>'; }) +
+      row('할인율', function (it) { return esc(it.discount); }) +
+      row('유찰', function (it) { return esc(it.yuchal); }) +
+      row('매각기일', function (it) { return esc(it.date) + (isPast(it) ? ' ⚠' : ''); }) +
+      row('점수', function (it) { return esc(it.score) + '점'; }) +
+      row('권리', function (it) { return esc(it.risk); }) + '</table>' +
+      '<ul><li>💰 가장 저렴: ' + idx(cheap) + ' ' + won(cheap.min_price) + '</li><li>📉 할인 최대: ' + idx(disc) + ' ' + esc(disc.discount) + '</li>' +
+      '<li>🏆 점수 최고: ' + idx(top) + ' ' + esc(top.score) + '점</li></ul>' +
+      '<div class="cb-note">최종 판단은 현장 시세·권리관계·관리비 등을 함께 고려하세요.</div>';
+    return reply(html, items.map(function (it) { return { label: '🔍 ' + it.rank + ' 상세', act: 'open', arg: it.id }; }), null, 'compare');
+  }
+
+  function statsReply(list, c) {
+    if (!list.length) return reply('<p>해당 조건의 물건이 없습니다.</p>', ['통계 요약'], null, 'stats');
+    var cnt = function (key) {
+      var o = {}; list.forEach(function (d) { var k = key(d); o[k] = (o[k] || 0) + 1; });
+      return Object.keys(o).map(function (k) { return [k, o[k]]; }).sort(function (a, b) { return b[1] - a[1]; });
+    };
+    var avg = list.reduce(function (s, d) { return s + d.discount_val; }, 0) / list.length;
+    var prices = list.map(function (d) { return d.min_price; }).sort(function (a, b) { return a - b; });
+    var med = prices[Math.floor(prices.length / 2)];
+    var cheap = list.slice().sort(function (a, b) { return a.min_price - b.min_price; })[0];
+    var maxd = list.slice().sort(function (a, b) { return b.discount_val - a.discount_val; })[0];
+    var up = list.filter(function (d) { return !isPast(d); }).length;
+    var area = cnt(function (d) { return d.category === 'daejeon' ? '대전 ' + d.sigu : d.sido; }).slice(0, 6);
+    var use = cnt(function (d) { return String(d.usage).split(',')[0]; }).slice(0, 6);
+    var html = '<h5>📊 통계 요약' + (c && c.has ? '' : ' (내장 데이터 전체)') + '</h5>' + (c && c.has ? '<div class="cb-crit">' + esc(describe(c)) + '</div>' : '') +
+      '<ul><li>물건 수: <b>' + list.length + '건</b> (진행 예정 ' + up + '건 · 기일 경과 ' + (list.length - up) + '건)</li>' +
+      '<li>평균 할인율: <b>' + avg.toFixed(1) + '%</b></li><li>최저가 중앙값: <b>' + won(med) + '</b></li>' +
+      '<li>가장 저렴: ' + esc(cut(cheap.address, 30)) + ' — ' + won(cheap.min_price) + '</li>' +
+      '<li>할인 최대: ' + esc(cut(maxd.address, 30)) + ' — ' + esc(maxd.discount) + '</li></ul>' +
+      '<table><tr><th>지역</th><th>건수</th><th>용도</th><th>건수</th></tr>' +
+      Array.apply(null, Array(Math.max(area.length, use.length))).map(function (_, i) {
+        return '<tr><td>' + (area[i] ? esc(area[i][0]) : '') + '</td><td>' + (area[i] ? area[i][1] : '') + '</td><td>' +
+          (use[i] ? esc(use[i][0]) : '') + '</td><td>' + (use[i] ? use[i][1] : '') + '</td></tr>';
+      }).join('') + '</table>' +
+      '<div class="cb-note">전국 1,287건·대전 522건 원천 데이터 중 포털에 내장된 추천 물건 ' + DATA.length + '건 기준 통계입니다.</div>';
+    return reply(html, ['대전 TOP 5', '할인율 높은 순 5개', '데이터 출처'], null, 'stats');
+  }
+
+  function itemChips(it) {
+    return [
+      '📉 유찰 스토리·회차별 타임라인 분석',
+      '📝 기일입찰표 작성 요령 & 주의사항',
+      '📊 갭투자 & 월세 수익률 시뮬레이션',
+      '⚖️ 경매 신청 사유 & 채권 분석',
+      '👤 세입자 계약상태 & 외국인 점검',
+      '🔮 차기 유찰 시뮬레이션',
+      '💰 입찰보증금·취득세·대출 계산',
+      '📈 적정 입찰가·수익률 시뮬레이션',
+      '📊 점수 산정 근거·장단점',
+      '🔍 권리·임차인·명도·관리비 진단',
+      '📍 입지·면적(평형)·환금성 분석',
+      '🏛 입찰법정·기일·준비물 안내',
+      '⚖️ 유사 매물과 비교'
+    ];
+  }
+
+  function parseSpecInfo(it) {
+    var s = cleanSpec(it.spec || '');
+    var mSqm = s.match(/(\d+(?:\.\d+)?)\s*(?:㎡|m2)/i);
+    var sqm = mSqm ? parseFloat(mSqm[1]) : null;
+    var pyeong = sqm ? (sqm * 0.3025).toFixed(1) : null;
+    var mFloor = String(it.address || '').match(/(\d+)\s*층/);
+    var floor = mFloor ? mFloor[1] + '층' : '층수 공고문 확인';
+    var struct = /철근콘크리트/.test(s) ? '철근콘크리트조' : (/벽돌|조적/.test(s) ? '연와/조적조' : (/철골/.test(s) ? '철골조' : '일반건축물'));
+    return { raw: s, sqm: sqm, pyeong: pyeong, floor: floor, struct: struct };
+  }
+
+  function ddayInfo(it) {
+    var d = dateOf(it);
+    if (!d) return '기일 미정';
+    var diff = Math.round((d.getTime() - TODAY.getTime()) / 86400000);
+    if (diff === 0) return '🔥 오늘 매각기일 (D-Day)';
+    if (diff > 0) return 'D-' + diff + '일 남음';
+    return '⚠ 기일 경과 (' + Math.abs(diff) + '일 전)';
+  }
+
+  function buildModalWelcomeHtml(it) {
+    var sp = parseSpecInfo(it);
+    var dep = Math.round((it.min_price || 0) * 0.1);
+    var tx = taxInfo(it.min_price || 0, it.usage);
+    var taxAmt = Math.round((it.min_price || 0) * tx.rate / 100);
+    var areaStr = sp.sqm ? (sp.sqm + '㎡ (전용 약 ' + sp.pyeong + '평)') : sp.raw;
+    return '<h5>🎯 [' + esc(it.rank) + '] ' + esc(it.court) + ' ' + esc(it.case_no) + ' 전담 AI 상담 시작</h5>' +
+      '<p>안녕하세요! 이 대화창은 <b>' + esc(it.address) + '</b> 단일 물건에 대해서만 집중적으로 분석·시뮬레이션하는 <b>1:1 전담 챗봇창</b>입니다.</p>' +
+      '<table>' +
+      '<tr><th>핵심 요약</th><td>용도 <b>' + esc(it.usage) + '</b> · ' + esc(areaStr) + ' · ' + esc(sp.floor) + '</td></tr>' +
+      '<tr><th>가격 조건</th><td>감정가 ' + won(it.appraisal) + ' → 최저가 <b style="color:#e53e3e">' + won(it.min_price) + '</b> (<b>' + esc(it.discount) + ' 할인</b>, ' + esc(it.yuchal) + ')</td></tr>' +
+      '<tr><th>초기 자금</th><td>입찰보증금(10%) <b>' + won(dep) + '</b> · 취득세 등 약 ' + won(taxAmt) + ' (' + tx.rate + '%)</td></tr>' +
+      '<tr><th>매각기일</th><td><b>' + esc(it.date) + '</b> (' + esc(ddayInfo(it)) + ' · ' + esc(it.dept || '경매계') + ')</td></tr>' +
+      '</table>' +
+      '<div class="cb-note">💡 아래 빠른 질문 버튼을 누르거나 <b>"2,500만원에 입찰하면 실투자금은?"</b>, <b>"대출 얼마나 나와?"</b>, <b>"명도·관리비 주의점은?"</b> 등 무엇이든 물어보세요.</div>';
+  }
+
+  function findSimilarItems(it, count) {
+    var u0 = String(it.usage).split(',')[0];
+    return DATA.filter(function (d) { return d.id !== it.id; }).map(function (d) {
+      var s = 0;
+      if (d.sigu && d.sigu === it.sigu) s += 40;
+      else if (d.sido === it.sido) s += 25;
+      if (String(d.usage).indexOf(u0) >= 0) s += 30;
+      var ratio = Math.abs(d.min_price - it.min_price) / Math.max(it.min_price, 1);
+      s += Math.max(0, 20 - ratio * 20);
+      return { d: d, s: s };
+    }).sort(function (a, b) { return b.s - a.s; }).slice(0, count || 2).map(function (x) { return x.d; });
+  }
+
+  function answerForItem(it, q, fromRoute) {
+    if (!it) return fromRoute ? null : route(q);
+    S.focusItem = it;
+    var c = parseCriteria(q);
+    var otherRefs = findRefs(q).filter(function (d) { return d.id !== it.id; });
+    var sp = parseSpecInfo(it);
+
+    // 1. 비교 요청
+    if (/비교|vs|유사|비슷|주변\s*매물|다른\s*물건/i.test(q)) {
+      var targets = otherRefs.length ? [it].concat(otherRefs.slice(0, 2)) : [it].concat(findSimilarItems(it, 2));
+      return compareReply(targets);
+    }
+
+    // 2. 적정 입찰가 · 수익률 · 안전마진 시뮬레이션
+    if (/수익률|안전마진|적정|추천\s*입찰가|시뮬레이션|전략|마진|시세차익|얼마에\s*(쓰면|사면|입찰|낙찰)/.test(q)) {
+      var minP = it.min_price || 0, appP = it.appraisal || minP;
+      var b1 = Math.round(minP * 1.02 / 10000) * 10000;
+      var b2 = Math.round(minP * 1.07 / 10000) * 10000;
+      var b3 = Math.round(minP * 1.14 / 10000) * 10000;
+      var estMarket = Math.round(Math.max(minP * 1.25, appP * (yuchalN(it) >= 4 ? 0.65 : 0.78)) / 10000) * 10000;
+      var txR = taxInfo(minP, it.usage).rate / 100;
+      var simRow = function (label, bid, desc) {
+        var tot = Math.round(bid * (1 + txR) + 1200000);
+        var margin = estMarket - tot;
+        var ratioApp = appP ? (bid / appP * 100).toFixed(1) + '%' : '-';
+        return '<tr><td><b>' + label + '</b><br><small style="color:#718096">' + desc + '</small></td>' +
+          '<td><b style="color:#e53e3e">' + won(bid) + '</b><br><small>감정가의 ' + ratioApp + '</small></td>' +
+          '<td>' + won(tot) + '</td>' +
+          '<td><b style="color:' + (margin > 0 ? '#2f855a' : '#e53e3e') + '">' + (margin >= 0 ? '+' : '') + won(margin) + '</b></td></tr>';
+      };
+      var htmlSim = '<h5>📈 [' + esc(it.case_no) + '] 3단계 입찰가 및 안전마진 시뮬레이션</h5>' +
+        '<div class="cb-crit">📌 보수적 추정 실거래 기준가: 약 <b>' + won(estMarket) + '</b> (감정가 ' + won(appP) + ' 및 유찰 ' + esc(it.yuchal) + ' 감안 추정치 · 입찰 전 네이버부동산/국토부 실거래 필히 대조)</div>' +
+        '<table><tr><th>입찰 시나리오</th><th>추천 입찰가</th><th>총 취득원가<br><small>(세금·부대비 포함)</small></th><th>예상 안전마진</th></tr>' +
+        simRow('① 보수적 투자형', b1, '최저가 +2% (단독/소수 응찰 노림)') +
+        simRow('② 실전 권장형', b2, '최저가 +7% (낙찰 확률·마진 균형)') +
+        simRow('③ 실거주 상한선', b3, '최저가 +14% (경쟁 시 마지노선)') +
+        '</table>' +
+        '<ul><li><b>입찰보증금 준비액</b>: 응찰 금액과 무관하게 최저매각가격의 10%인 <b style="color:#e53e3e">' + won(minP * 0.1) + '</b> 수표 1장을 준비하시면 됩니다.</li>' +
+        '<li><b>핵심 전략</b>: 이미 감정가 대비 <b>' + esc(it.discount) + '</b> 저감된 상태이므로 무리한 고가 낙찰을 피하고 급매 호가 대비 최소 1,500만~3,000만 원 이상의 안전마진을 확보하는 선에서 입찰가를 결정하세요.</li></ul>';
+      return reply(htmlSim, itemChips(it), null, 'calc');
+    }
+
+    // 3. 입찰비용 · 보증금 · 세금 · 경락잔금대출 · 특정 입찰금액 시뮬레이션
+    if (/비용|입찰가|보증금|세금|취득세|계산|얼마|낙찰|응찰|쓰면|입찰하|대출|잔금|실투자|자기자본|현금/.test(q)) {
+      var customBid = c.maxPrice != null ? c.maxPrice : c.minPrice;
+      var targetBid = (customBid != null && customBid > 0) ? customBid : it.min_price;
+      var tx = taxInfo(targetBid, it.usage), tax = Math.round(targetBid * tx.rate / 100);
+      var loanRate = /아파트|주상복합|다세대|연립|빌라|단독|다가구/.test(it.usage) ? 0.75 : 0.65;
+      var estLoan = Math.round(Math.min(targetBid * loanRate, (it.appraisal || targetBid) * 0.60) / 10000) * 10000;
+      var misc = 1500000; // 등기·법무·명도 예비비 약 150만원
+      var realEquity = Math.max(0, targetBid - estLoan + tax + misc);
+      var extra = '';
+      if (customBid != null && customBid > 0 && customBid < it.min_price) {
+        extra += '<div class="cb-crit" style="background:rgba(239,68,68,.15);color:#e53e3e">⚠ 입력하신 입찰가(' + won(customBid) + ')가 최저매각가격(' + won(it.min_price) + ')보다 낮아 입찰 무효가 됩니다. 최저가 이상으로 산정하세요.</div>';
+      }
+      extra += '<div class="cb-crit">💳 <b>[' + esc(it.case_no) + '] ' + won(targetBid) + ' 낙찰 시 경락잔금대출 & 실투자금 분석</b><br>' +
+        '• 예상 경락잔금대출 한도(약 ' + Math.round(loanRate * 100) + '%): 약 <b>' + won(estLoan) + '</b><br>' +
+        '• <b>실제 필요 자기자본(실투자금)</b>: 약 <b style="color:#e53e3e">' + won(realEquity) + '</b> (낙찰잔금 - 대출 + 취득세 ' + won(tax) + ' + 법무/명도비 약 150만원)</div>';
+      var html = extra + calcHtml(targetBid, it.appraisal, it.usage, it.rank + ' (' + it.case_no + ')');
+      return reply(html, itemChips(it), null, 'calc');
+    }
+
+    // 3.5. 유찰 스토리 · 회차별 타임라인 심층 분석
+    if (/유찰\s*(스토리|내역|히스토리|타임라인|이력|과정|사유|배경|왜)|회차별/.test(q)) {
+      if (typeof window.buildYuchalStory === 'function') {
+        var ysObj = window.buildYuchalStory(it);
+        if (ysObj && ysObj.modalHtml) {
+          return reply(ysObj.modalHtml, itemChips(it), null, 'detail');
+        }
+      }
+    }
+
+    // 3.55. 기일입찰표 작성 요령 & 무효 방지 가이드
+    if (/입찰표|기일입찰표|보증봉투|작성\s*(요령|법|가이드|주의)|어떻게\s*(써|작성)/.test(q)) {
+      var minP = it.min_price || 0;
+      var depP = Math.round(minP * 0.1);
+      var htmlBs = '<h5>📝 [' + esc(it.case_no) + '] 법원 기일입찰표 작성 5대 핵심 수칙 &amp; 자동작성기</h5>' +
+        '<div class="cb-crit" style="background:#f5f3ff; border:2px solid #7c3aed; color:#4c1d95; margin-bottom:8px;">' +
+        '<b>🎯 법원 기일입찰표 자동작성기 바로가기:</b><br>' +
+        '본 물건의 기일입찰표와 매수신청보증봉투를 1초 만에 자동 작성하고 A4로 출력하려면 상단 또는 하단의 <b>[📝 입찰표]</b> 버튼을 누르세요!</div>' +
+        '<table><tr><th>작성 항목</th><th>작성 지침 및 필수 주의사항</th></tr>' +
+        '<tr><td><b>사건/물건번호</b></td><td><b>' + esc(it.case_no) + '</b> / 물건번호 <b>' + esc(it.item_no || '1') + '번</b> (물건번호 누락 시 무효 처리)</td></tr>' +
+        '<tr><td><b>입찰보증금액</b></td><td>최저매각가격(' + won(minP) + ')의 10%인 <b>' + won(depP) + '</b> (입찰가격이 아닌 <u>최저가격의 10%</u>를 수표 1매로 준비)</td></tr>' +
+        '<tr><td><b>입찰가격 표기</b></td><td>한글 정서(예: 금 일억 이천만 원정)와 아라비아 숫자를 정확히 일치시켜야 함 (수정테이프 사용 불가, 틀리면 새 종이로 재작성)</td></tr>' +
+        '<tr><td><b>신분증 & 도장</b></td><td>본인 입찰 시 신분증(주민등록증·운전면허증)과 도장(지장도 가능하나 인장 권장) 필참</td></tr>' +
+        '<tr><td><b>보증봉투 제출</b></td><td>기일입찰표와 수표를 담은 매수신청보증봉투를 대봉투에 함께 넣고 스테이플러로 봉인 후 입찰함 투함</td></tr></table>';
+      return reply(htmlBs, itemChips(it), null, 'detail');
+    }
+
+    // 3.56. 갭투자 및 월세 Cap Rate 수익률 시뮬레이션
+    if (/갭투자|갭\s*투자|전세가율|카프레이트|cap\s*rate|월세\s*수익률|연간\s*수익/.test(q)) {
+      var appP = it.appraisal || 0, minP = it.min_price || 0;
+      var estJeonse = Math.round(appP * 0.70 / 10000) * 10000;
+      var gapAmt = minP - estJeonse;
+      var estDep = Math.round(minP * 0.1 / 10000) * 10000;
+      var estRent = Math.round((minP * 0.055 / 12) / 10000) * 10000;
+      var cap = minP > 0 ? ((estRent * 12) / (minP - estDep) * 100).toFixed(1) : '6.5';
+      var htmlGap = '<h5>📊 [' + esc(it.case_no) + '] 실거래가 대조 갭투자 &amp; Cap Rate 수익률 분석</h5>' +
+        '<table><tr><th>투자 전략</th><th>시뮬레이션 산정치</th><th>투자 매력도</th></tr>' +
+        '<tr><td><b>전세 갭투자</b></td><td>예상 전세가 <b>' + won(estJeonse) + '</b> (전세가율 70%)<br>필요 갭자금: <b style="color:' + (gapAmt <= 15000000 ? '#7c3aed' : '#2b6cb0') + ';">' + (gapAmt <= 0 ? '0원 (플러스피)' : won(gapAmt)) + '</b></td><td>' + (gapAmt <= 15000000 ? '🔥 초소액 갭투자 유망' : '안정적 주거용 갭투자') + '</td></tr>' +
+        '<tr><td><b>월세 Cap Rate</b></td><td>보증금 <b>' + won(estDep) + '</b> / 월차임 <b>' + won(estRent) + '</b><br>연간 임대료 수입: <b>' + won(estRent * 12) + '</b></td><td><b style="color:#d97706;">연 ' + cap + '% (고수익 Cap Rate)</b></td></tr>' +
+        '<tr><td><b>레버리지 ROE</b></td><td>경락대출 70% 실행 시 실투자금 약 <b>' + won(Math.round(minP * 0.35)) + '</b></td><td><b>연 14.5% ~ 21.0% (ROE)</b></td></tr></table>';
+      return reply(htmlGap, itemChips(it), null, 'calc');
+    }
+
+    // 3.6. 경매에 나온 이유 · 신청 사유 및 채권자 분석
+    if (/경매\s*(이유|원인|사유|왜\s*나(왔|옴)|신청\s*사유)|채권자|청구금액/.test(q)) {
+      var ar = it.auction_reason;
+      if (ar) {
+        var htmlAr = '<h5>⚖️ [' + esc(it.case_no) + '] 경매 신청 사유 및 채권자 분석 리포트</h5>' +
+          '<table><tr><th>구분</th><th>상세 내역</th></tr>' +
+          '<tr><td><b>경매 유형</b></td><td><b style="color:#b45309;">' + esc(ar.type) + '</b></td></tr>' +
+          '<tr><td><b>신청 채권자</b></td><td>' + esc(ar.creditor) + '</td></tr>' +
+          '<tr><td><b>청구 채권액</b></td><td><b style="color:#e53e3e;">' + esc(ar.claim_amount_str) + '</b></td></tr>' +
+          '<tr><td><b>낙찰 시 권리 관계</b></td><td><b style="color:#2f855a;">✅ 100% 소멸</b> (매각대금 완납 시 모든 담보물권 말소 촉탁 대상)</td></tr></table>' +
+          '<div class="cb-crit" style="margin-top:8px;"><b>📌 사건 발생 배경:</b><br>' + esc(ar.story) + '</div>';
+        return reply(htmlAr, itemChips(it), null, 'detail');
+      }
+    }
+
+    // 3.7. 기존 세입자 계약 상태 & 외국인 여부 점검
+    if (/세입자|임차인|임대차|보증금|외국인|점유|대항력|체류지|출입국/.test(q)) {
+      var ti = it.tenant_info;
+      if (ti) {
+        var fAlert = ti.is_foreigner ?
+          '<div class="cb-crit" style="background:#f5f3ff; border:2px solid #818cf8; color:#3730a3; margin-top:8px;">' +
+          '<b>🌐 [외국인 임차인 특별 점검 경보 — 대법원 2016다244224 판결]</b><br>' +
+          '• 외국인 성명/국적: <b>' + esc(ti.foreigner_name) + '</b><br>' +
+          '• <b>주의:</b> 외국인은 일반 주민센터 전입세대열람원에 등재되지 않습니다!<br>' +
+          '• 반드시 관할 <b>출입국·외국인관서</b>에서 <b>[외국인체류확인서]</b>를 발급받아 체류지 변경신고일을 확인해야 합니다. 체류신고일이 근저당보다 빠르면 선순위 대항력이 인정되어 보증금을 인수해야 합니다.</div>' :
+          '<div class="cb-crit" style="background:#f0fdf4; border:1px solid #86efac; color:#166534; margin-top:8px;">' +
+          '<b>🇰🇷 ' + (ti.foreigner_status === 'OWNER' ? '소유자 거주 매물' : '내국인 임차인 매물') + '</b>: 동주민센터 전입세대열람원(확인서)을 통해 권리관계 확인이 완료되었습니다.</div>';
+
+        var htmlTi = '<h5>👤 [' + esc(it.case_no) + '] 기존 세입자 임대차 계약 상태 및 점유 진단</h5>' +
+          '<table><tr><th>항목</th><th>계약 및 점유 현황</th></tr>' +
+          '<tr><td><b>점유 형태</b></td><td><b>' + esc(ti.occupant_type) + '</b> (' + esc(ti.status_label) + ')</td></tr>' +
+          '<tr><td><b>보증금 / 월세</b></td><td><b style="color:#e53e3e;">' + esc(ti.deposit_str) + '</b>' + (ti.monthly_rent > 0 ? ' / 월 ' + esc(ti.monthly_rent_str) : '') + '</td></tr>' +
+          '<tr><td><b>전입(체류신고) / 확정일자</b></td><td>' + esc(ti.move_in_date) + ' / ' + esc(ti.fixed_date) + '</td></tr>' +
+          '<tr><td><b>배당신청 여부</b></td><td>' + esc(ti.dividend_req) + '</td></tr>' +
+          '<tr><td><b>대항력 성립 여부</b></td><td><b style="color:' + (String(ti.opposing_power).includes('선순위') ? '#e53e3e' : '#2f855a') + ';">' + esc(ti.opposing_power) + '</b></td></tr>' +
+          '<tr><td><b>낙찰자 인수 보증금</b></td><td><b style="color:' + (ti.takeover_deposit > 0 ? '#e53e3e' : '#2f855a') + ';">' + esc(ti.takeover_deposit_str) + '</b></td></tr></table>' +
+          fAlert +
+          '<div style="font-size:0.84rem; color:#4a5568; margin-top:8px; line-height:1.5;">' + esc(ti.detail) + '</div>';
+        return reply(htmlTi, itemChips(it), null, 'detail');
+      }
+    }
+
+    // 3.8. 차기 유찰 시뮬레이션
+    if (/다음\s*차수|차기|다음\s*회차|유찰\s*되면|추가\s*유찰/.test(q)) {
+      var sim = it.next_round_sim;
+      if (sim) {
+        var htmlSim = '<h5>🔮 [' + esc(it.case_no) + '] 차기(' + sim.next_round_no + '차) 유찰 가격 시뮬레이션</h5>' +
+          '<table><tr><th>항목</th><th>차기 회차 예상치</th></tr>' +
+          '<tr><td><b>차기 진행 회차</b></td><td><b>' + sim.next_round_no + '차 매각기일</b></td></tr>' +
+          '<tr><td><b>법원 기본 저감률</b></td><td>관할법원(' + esc(it.court) + ') 저감률 <b>' + esc(sim.court_rate) + '</b> 적용</td></tr>' +
+          '<tr><td><b>차기 예상 최저가</b></td><td><b style="color:#e53e3e; font-size:1.02rem;">' + esc(sim.next_min_price_str) + '</b> (-' + sim.next_discount_pct + '%)</td></tr>' +
+          '<tr><td><b>차기 필요 입찰보증금</b></td><td><b>' + esc(sim.next_deposit_str) + '</b> (최저가의 10%)</td></tr></table>' +
+          '<div class="cb-crit" style="background:#eff6ff; border-left:4px solid #2563eb; color:#1e3a8a; margin-top:8px;">' +
+          '<b>💡 응찰 타이밍 전략:</b><br>' + esc(sim.advice) + '</div>';
+        return reply(htmlSim, itemChips(it), null, 'calc');
+      }
+    }
+
+    // 4. 점수 산정 근거 · 장단점 · 유찰 사유 분석
+    if (/점수|왜|근거|배점|장단점|장점|단점|메리트|분석|평가|유찰/.test(q)) {
+      var sb = scoreBreak(it), diff = Math.max(0, (it.appraisal || 0) - (it.min_price || 0));
+      var yn = yuchalN(it);
+      var html2 = '<h5>📊 [' + esc(it.rank) + ' · ' + esc(it.case_no) + '] 가치평가 분석 및 장단점</h5>' +
+        '<table><tr><th>평가 항목</th><th>배점</th><th>산정 근거</th></tr>' +
+        '<tr><td>가격 메리트</td><td><b>' + sb.p + '</b> / 40점</td><td>감정가 대비 <b>' + esc(it.discount) + '</b> 할인 (차액 ' + won(diff) + ')</td></tr>' +
+        '<tr><td>권리 안전성</td><td><b>' + sb.r + '</b> / 30점</td><td>' + esc(it.risk) + ' (등기부 담보권 소멸주의)</td></tr>' +
+        '<tr><td>용도·환금성</td><td><b>' + sb.us + '</b> / 20점</td><td>' + esc(it.usage) + (sp.sqm ? ' (전용 ' + sp.sqm + '㎡ / 약 ' + sp.pyeong + '평)' : '') + '</td></tr>' +
+        '<tr><td>입지 선호도</td><td><b>' + sb.l + '</b> / 10점</td><td>' + esc(it.sido + ' ' + (it.sigu || '')) + '</td></tr>' +
+        '<tr><th>종합 점수</th><th colspan="2"><b style="color:#d69e2e">★ ' + esc(it.score) + '점 (100점 만점)</b></th></tr></table>' +
+        '<ul><li><b>강점(Pros)</b>: 감정가(' + won(it.appraisal) + ') 대비 최저가가 <b>' + won(it.min_price) + '</b>으로 크게 낮아졌으며, 특수권리 위험이 없는 소멸주의 안전 물건입니다.</li>' +
+        '<li><b>유찰 배경 및 유의점(Cons)</b>: 총 <b>' + esc(it.yuchal) + '</b> 유찰된 물건으로, ' + (yn >= 3 ? '최초 감정 시점 대비 실거래가 조정 또는 공용관리비·내부 수리비 부담 때문에 응찰자가 관망했을 가능성이 높습니다.' : '1~2회 유찰로 가격 메리트가 막 형성된 구간입니다.') + ' 현장 임장을 통해 건물 상태와 급매 시세를 확인하세요.</li></ul>';
+      return reply(html2, itemChips(it), null, 'detail');
+    }
+
+    // 5. 권리분석 · 임차인 · 명도 · 미납관리비 정밀 진단
+    if (/체크|주의|위험|명도|관리비|임차인|대항력|권리|하자|확인해야|인도명령|이사비|점유|소멸주의|말소/.test(q)) {
+      var estMng = sp.sqm ? Math.round(sp.sqm * 1800 / 10000) : 8;
+      var estUnpaid = estMng * 12;
+      var html3 = '<h5>🔍 [' + esc(it.case_no) + '] 권리·임차인·명도·관리비 정밀 진단</h5>' +
+        '<table><tr><th>진단 항목</th><th>본 물건 분석 결과 및 대응 지침</th></tr>' +
+        '<tr><td><b>등기부 권리</b></td><td><b style="color:#2f855a">✅ ' + esc(it.risk) + '</b> — 낙찰대금 완납 시 민사집행법 제91조 제2항에 따라 모든 근저당·가압류·경매기입등기가 법원 촉탁으로 100% 말소됩니다.</td></tr>' +
+        '<tr><td><b>임차인 대항력</b></td><td>입찰 전 대법원 <b>매각물건명세서</b>의 [최선순위 설정일자]와 임차인 전입일을 대조하세요. 후순위 임차인이나 채무자(소유자) 점유라면 보증금 인수 위험이 전혀 없습니다.</td></tr>' +
+        '<tr><td><b>미납 관리비 추정</b></td><td>전용 ' + (sp.sqm ? sp.sqm + '㎡(약 ' + sp.pyeong + '평)' : '면적') + ' 기준 월 공용관리비 약 ' + estMng + '만 원 수준 추정 (1년 연체 가정 시 공용분 약 <b>' + estUnpaid + '만 원</b> 내외 · 관리사무소 전화 확인 필수)</td></tr>' +
+        '<tr><td><b>명도(인도) 전략</b></td><td>잔금 납부 즉시 <b>인도명령 신청</b>(소유자·채무자·대항력 없는 임차인 대상, 통상 2~4주 내 결정) → 점유자 접촉 및 이사비(' + (sp.sqm && sp.sqm < 60 ? '약 80~150만 원' : '약 150~250만 원') + ' 선) 원만 협의 권장</td></tr></table>';
+      return reply(html3, itemChips(it), null, 'detail');
+    }
+
+    // 6. 입지 · 면적(평형) · 주변여건 · 환금성 분석
+    if (/입지|면적|몇\s*평|평수|평형|동네|주변|교통|학군|전세|월세|임대|환금성|구조|층수|호수/.test(q)) {
+      var locDesc = /유성구/.test(it.sigu) ? '대전 선호도 1위 자치구(대덕연구단지·대학가·신도심 인프라)로 젊은 층 실거주 및 전·월세 임대수요가 매우 탄탄합니다.'
+        : (/서구/.test(it.sigu) ? '둔산·월평·관저 생활권 중심지로 행정·상업·교통 인프라가 우수하여 매도 환금성이 뛰어납니다.'
+        : (/중구/.test(it.sigu) ? '전통 주거 밀집지역 및 도시철도·재개발/재건축 호재가 공존하는 원도심 핵심 생활권입니다.'
+        : '실수요 거주 및 소액 임대수익형 접근에 유리한 가성비 입지입니다.'));
+      var htmlLoc = '<h5>📍 [' + esc(it.case_no) + '] 입지·면적(평형)·환금성 분석</h5>' +
+        '<ul><li><b>소재지</b>: <b>' + esc(it.address) + '</b> (' + esc(sp.floor) + ')</li>' +
+        '<li><b>건물 구조 및 전용면적</b>: ' + esc(sp.struct) + ' · <b>' + (sp.sqm ? sp.sqm + '㎡ (전용 약 ' + sp.pyeong + '평 / 공급면적 기준 약 ' + (sp.sqm * 0.38).toFixed(0) + '평형대 추정)' : esc(sp.raw)) + '</b></li>' +
+        '<li><b>지역 입지 특성 (' + esc(it.sido + ' ' + (it.sigu || '')) + ')</b>: ' + locDesc + '</li>' +
+        '<li><b>수요층 및 출구전략</b>: 최저가가 <b>' + won(it.min_price) + '</b>으로 소액 진입이 가능해 ' + (/아파트|주상복합/.test(it.usage) ? '실거주 또는 수리 후 전·월세 세팅 및 단기 매도 차익 실현에 적합합니다.' : '소액 월세 현금흐름 창출 목적의 수익형 투자에 적합합니다.') + '</li></ul>';
+      return reply(htmlLoc, itemChips(it), null, 'detail');
+    }
+
+    // 7. 입찰법정 · 매각기일 · 담당계 · 준비물 · 지도 위치
+    if (/법원|법정|기일|언제|어디|담당|시간|준비물|출석|방문|서류|위임장|수표|지도|위치|길찾기/.test(q)) {
+      var cInfo = (window.COURTS_60_DATA || []).filter(function (x) {
+        return x.name === it.court || x.name.indexOf(it.court) >= 0 || (it.court && it.court.indexOf(x.name) >= 0);
+      })[0];
+      var html4 = '<h5>🏛 [' + esc(it.case_no) + '] 입찰법정 주소·위치 및 기일 안내</h5>' +
+        '<ul><li><b>관할법원 / 담당계</b>: <b>' + esc(it.court) + ' ' + esc(it.dept || '경매계') + '</b>' + (cInfo ? ' (' + esc(cInfo.type) + ' · 1회 유찰저감률 <b>' + esc(cInfo.rate) + '</b>)' : '') + '</li>' +
+        (cInfo ? '<li><b>📍 법원 도로명주소</b>: <b>' + esc(cInfo.addr) + '</b></li>' +
+          '<li><b>📞 법원 대표전화</b>: ' + esc(cInfo.tel) + ' (입찰시간: ' + esc(cInfo.time) + ')</li>' +
+          '<li><b>🗺️ 관할 구역</b>: ' + esc(cInfo.juris) + '</li>' : '') +
+        '<li><b>🏠 경매물건 소재지</b>: <b>' + esc(it.address) + '</b></li>' +
+        '<li><b>📅 매각기일 및 남은 기간</b>: <b>' + esc(it.date) + ' (' + esc(ddayInfo(it)) + ')</b>' + (isPast(it) ? ' <span style="color:#e53e3e">(⚠ 기일 경과 — 대법원 사이트에서 낙찰/변경/차기 기일 확인 필수)</span>' : ' (통상 오전 10:00 입찰 개시)') + '</li>' +
+        '<li><b>💰 입찰보증금 (최저가의 10%)</b>: <b style="color:#e53e3e">' + won(it.min_price * 0.1) + '</b> (은행 자기앞수표 1장 권장)</li>' +
+        '<li><b>🎒 필수 지참물</b>: 본인 신분증, 도장(막도장 가능), 입찰보증금 (대리입찰 시 본인 인감증명서·인감날인 위임장 추가)</li></ul>';
+      return reply(html4, [
+        { label: '🗺️ 물건 위치 지도보기', act: 'map', arg: it.id },
+        { label: '🏛️ 관할법원 지도보기', act: 'courtmap', arg: it.court }
+      ].concat(itemChips(it)), null, 'detail');
+    }
+
+    // 8. 기본 물건 브리핑 또는 모달 전용 집중 답변
+    if (/이\s*물건|이\s*매물|자세히|상세|정보|요약|브리핑/.test(q)) {
+      return reply(detailHtml(it), itemChips(it), null, 'detail');
+    }
+
+    // 모달 전담 챗봇창(fromRoute === false)에서 질문한 경우: 심층 컨설팅 자문 + 본 물건 맞춤 진단 결합!
+    if (!fromRoute) {
+      var advInModal = expertConsultantReply(q);
+      if (advInModal) {
+        var itemBanner = '<div class="cb-crit">📌 <b>본 물건([' + esc(it.rank) + '] ' + esc(it.case_no) + ') 적용 진단</b>: 현재 보시는 물건은 권리구분상 <b>[' + esc(it.risk) + ']</b> 상태이며, 최저가 <b>' + won(it.min_price) + '</b>(할인율 ' + esc(it.discount) + ')입니다.</div>';
+        return reply(itemBanner + advInModal.html, itemChips(it), null, 'detail');
+      }
+      var kbInModal = findKB(q);
+      if (kbInModal.length) {
+        var eModal = kbInModal[0];
+        var itemBanner2 = '<div class="cb-crit">📌 <b>본 물건([' + esc(it.rank) + '] ' + esc(it.case_no) + ') 기준</b>: 권리상태 <b>' + esc(it.risk) + '</b> · 최저가 <b>' + won(it.min_price) + '</b></div>';
+        return reply(itemBanner2 + enhanceKBWithIntent(q, eModal), itemChips(it), null, 'detail');
+      }
+      var dep0 = Math.round((it.min_price || 0) * 0.1);
+      var tx0 = taxInfo(it.min_price || 0, it.usage);
+      var taxAmt0 = Math.round((it.min_price || 0) * tx0.rate / 100);
+      var htmlFocus = '<h5>🎯 [' + esc(it.rank) + ' · ' + esc(it.case_no) + '] 맞춤형 종합 투자 의견</h5>' +
+        '<p>질문하신 <b>"' + esc(q) + '"</b>에 대해 본 물건(<b>' + esc(cut(it.address, 36)) + '</b>) 기준으로 답변드립니다.</p>' +
+        '<ul>' +
+        '<li><b>투자 매력도 (★ ' + esc(it.score) + '점)</b>: 감정가(' + won(it.appraisal) + ') 대비 <b>' + esc(it.discount) + '</b> 할인된 최저가 <b style="color:#e53e3e">' + won(it.min_price) + '</b>(' + esc(it.yuchal) + ')로 가격 메리트가 매우 높습니다.</li>' +
+        '<li><b>필요 자금 요약</b>: 입찰보증금(10%) <b>' + won(dep0) + '</b> · 취득세 약 <b>' + won(taxAmt0) + '</b> · 경락잔금대출 활용 시 소액 자기자본으로 취득 가능합니다.</li>' +
+        '<li><b>핵심 체크포인트</b>: 권리분석상 <b>' + esc(it.risk) + '</b> 물건으로 등기부상 인수 권리는 없으나, 입찰 전(' + esc(it.date) + ') 현장 임장을 통해 급매 시세와 미납 관리비만 확인하시면 초보자도 안전하게 접근할 수 있습니다.</li>' +
+        '</ul>' +
+        '<div class="cb-note">더 구체적인 시뮬레이션이 필요하시면 아래 주제 버튼을 눌러보세요!</div>';
+      return reply(htmlFocus, itemChips(it), null, 'detail');
+    }
+
+    return route(q);
+  }
+
+  function route(q) {
+    var refs, c, kb, m;
+    S.lastQ = q;
+    if (/다크\s*모드|어두운\s*모드|어둡게|dark\s*mode/i.test(q)) {
+      if (typeof toggleTheme === 'function') toggleTheme('dark');
+      return reply('<p>🌙 <b>다크 모드</b>로 전환했습니다. 상단 메뉴의 <b>☀️ 라이트모드</b> 버튼으로 언제든 되돌릴 수 있어요.</p>', ['대전 TOP 5', '라이트모드'], null, 'help');
+    }
+    if (/라이트\s*모드|밝은\s*모드|밝게|light\s*mode/i.test(q)) {
+      if (typeof toggleTheme === 'function') toggleTheme('light');
+      return reply('<p>☀️ <b>라이트 모드</b>로 전환했습니다. 상단 메뉴의 테마 버튼으로 언제든 변경할 수 있어요.</p>', ['대전 TOP 5', '다크모드', '그레이모드'], null, 'help');
+    }
+    if (/그레이\s*모드|회색\s*모드|gray\s*mode|grey\s*mode/i.test(q)) {
+      if (typeof toggleTheme === 'function') toggleTheme('gray');
+      return reply('<p>☁️ <b>그레이 모드</b>로 전환했습니다. 눈부심을 줄인 저자극 회색 톤으로 표시됩니다.</p>', ['대전 TOP 5', '라이트모드', '다크모드'], null, 'help');
+    }
+    if (/리프레쉬|리프레시|새로\s*고침|데이터\s*업데이트|경매\s*정보\s*갱신|refresh/i.test(q)) {
+      if (typeof refreshAuctionData === 'function') refreshAuctionData();
+      return reply('<p>🔄 <b>대법원 경매정보 최신 데이터 리프레쉬</b>를 실행했습니다! 상단 통계와 매물 목록이 최신 수집 데이터(내장 ' + DATA.length + '건)로 동기화되었습니다.</p>', ['대전 TOP 5', '전국 베스트 추천', '통계 현황'], null, 'help');
+    }
+    if (/최대화|창\s*크게|전체\s*화면|넓게/.test(q)) {
+      if (typeof toggleMaximize === 'function') toggleMaximize(true);
+      return reply('<p>⤢ 챗봇창을 <b>최대화</b>했습니다. 상단 <b>⤡ 이전크기</b> 버튼으로 원래 크기로 되돌릴 수 있어요.</p>', ['이전크기', '대전 TOP 5'], null, 'help');
+    }
+    if (/이전\s*크기|원래\s*크기|창\s*작게|기본\s*크기|복원/.test(q)) {
+      if (typeof toggleMaximize === 'function') toggleMaximize(false);
+      return reply('<p>⤡ 챗봇창을 <b>이전 크기</b>로 복원했습니다.</p>', ['최대화', '대전 TOP 5'], null, 'help');
+    }
+    if (/^\s*(안녕|하이|hello|hi|반가|처음\s*왔)/i.test(q) || /도움말|사용법|뭘\s*할\s*수|뭐\s*할\s*수|무엇을\s*할|기능|help/i.test(q)) return helpReply();
+
+    refs = findRefs(q);
+    if (S.focusItem && (!refs.length || (refs.length === 1 && /비교|vs|유사|비슷/i.test(q))) &&
+        /이\s*물건|이\s*매물|유찰\s*스토리|회차별|입찰보증금·취득세|점수\s*산정|장단점|유사\s*매물|비슷한\s*매물|체크리스트|입찰법정·기일|담당계/.test(q)) {
+      var focusedRes = answerForItem(S.focusItem, q, true);
+      if (focusedRes) return focusedRes;
+    }
+    var wantCalc = /비용|입찰가|보증금|세금|취득세|계산|얼마/.test(q);
+    if (refs.length >= 2 && (/비교|vs|차이|어느|뭐가\s*(더|나)|중에/i.test(q) || !wantCalc)) return compareReply(refs);
+    if (refs.length >= 1 && wantCalc) {
+      var it = refs[0]; S.focusItem = it;
+      return answerForItem(it, q, true) || reply(calcHtml(it.min_price, it.appraisal, it.usage, it.rank + ' ' + cut(it.address, 24)),
+        [{ label: '🔍 상세 팝업', act: 'open', arg: it.id }].concat(itemChips(it)), null, 'calc');
+    }
+    if (refs.length >= 1) {
+      S.focusItem = refs[0];
+      var subRes = answerForItem(refs[0], q, true);
+      if (subRes && !/자세히|상세/.test(q)) return subRes;
+      return reply(detailHtml(refs[0]), [{ label: '🔍 상세 팝업 열기', act: 'open', arg: refs[0].id }].concat(itemChips(refs[0])), null, 'detail');
+    }
+    if (/(\d{4})\s*타경\s*(\d+)/.test(q)) {
+      return reply('<p>🔍 해당 사건번호는 포털 내장 데이터(' + DATA.length + '건)에 없습니다. 대법원 경매정보 사이트에서 직접 조회해 보세요.</p>',
+        [{ label: '🔗 대법원 경매정보', act: 'court' }], null, 'detail');
+    }
+
+    if (/^\s*(더|다음|계속|more)\s*(보여|줘|볼래|보기)?/i.test(q) || /더\s*보여|더\s*보기|나머지/.test(q)) {
+      if (S.all.length && S.shown < S.all.length) return reply(showSlice(PAGE), resultChips(), null, 'search');
+      if (S.all.length) return reply('<p>이전 검색 결과를 모두 보여드렸어요. (총 ' + S.all.length + '건)</p>', ['대전 TOP 5'], null, 'search');
+    }
+
+    c = parseCriteria(q);
+    if (wantCalc && (c.maxPrice != null || c.minPrice != null) && !/추천|찾아|보여|물건|매물/.test(q)) {
+      var price = c.maxPrice != null ? c.maxPrice : c.minPrice;
+      var usage = /상가|근린|오피스텔|토지|대지|임야|땅/.test(q) ? '상가' : '아파트';
+      return reply(calcHtml(price, null, usage, won(price) + ' 낙찰 가정'), ['취득세 알려줘', '안전마진 계산법'], null, 'calc');
+    }
+
+    if (/통계|평균|현황|분포|몇\s*(건|개)|총\s*몇|요약|개수/.test(q)) {
+      var base0 = /그중|그\s*중|이\s*중|여기서/.test(q) && S.all.length ? S.all : DATA;
+      return statsReply(c.has ? applyCriteria(base0, c) : base0, c);
+    }
+
+    var searchVerb = /추천|찾아|보여|골라|리스트|매물\s*검색|물건\s*검색/.test(q);
+    var advReply = expertConsultantReply(q);
+    if (advReply && !searchVerb) {
+      return advReply;
+    }
+
+    kb = findKB(q);
+    var isQuestion = /뭐|무엇|란\??\s*$|이란|라는|의미|설명|뜻|어떻게|왜|차이|궁금|어디|인가요|인가\??|할까|말까|좋은|괜찮|제외|포기|피해|위험|\?/.test(q);
+    if (kb.length && !searchVerb && (isQuestion || !c.has)) {
+      var e = kb[0], chips = (e.rel || []).slice();
+      if (e.act) chips.unshift(e.act);
+      kb.slice(1, 3).forEach(function (x) { chips.push(x.t.replace(/^[^\s]+\s/, '').replace(/\s*\(.*\)$/, '')); });
+      return reply(enhanceKBWithIntent(q, e), chips, null, 'kb');
+    }
+
+    if (c.has || searchVerb || c.sort || c.limit) {
+      var refine = /그중|그\s*중|이\s*중|여기서|거기서|그\s*안에서|이\s*결과/.test(q) && S.all.length > 0;
+      return searchReply(q, refine ? S.all.slice() : DATA, c, refine);
+    }
+    if (kb.length) { var e2 = kb[0]; return reply(enhanceKBWithIntent(q, e2), (e2.rel || []).slice(), null, 'kb'); }
+
+    return smartFallbackReply(q);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 7. 생성형 AI (Gemini) 연동 — 선택                                      */
+  /* ------------------------------------------------------------------ */
+  function ls(k, v) {
+    try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; }
+  }
+  function aiEnabled() { return ls('cb_use_ai') === '1' && !!ls('cb_key'); }
+
+  function md(s) {
+    var h = esc(s);
+    h = h.replace(/^#{1,4}\s*(.*)$/gm, '<h5>$1</h5>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+    var out = [], inList = false;
+    h.split('\n').forEach(function (ln) {
+      var mm = ln.match(/^\s*(?:[-*•]|\d+\.)\s+(.*)/);
+      if (mm) { if (!inList) { out.push('<ul>'); inList = true; } out.push('<li>' + mm[1] + '</li>'); }
+      else { if (inList) { out.push('</ul>'); inList = false; } if (ln.trim()) out.push(/^<h5>/.test(ln) ? ln : '<p>' + ln + '</p>'); }
+    });
+    if (inList) out.push('</ul>');
+    return out.join('').replace(/(\d{4})타경(\d+)/g, function (cn) {
+      var it = DATA.filter(function (d) { return d.case_no === cn; })[0];
+      return it ? '<a href="javascript:void(0)" data-open="' + esc(it.id) + '">' + cn + '</a>' : cn;
+    });
+  }
+
+  function askAI(q, local) {
+    var key = ls('cb_key'), model = ls('cb_model') || 'gemini-2.5-flash';
+    var ctx = DATA.map(function (it) {
+      return [it.rank, it.score, it.sido, it.sigu, it.usage, cut(it.address, 60), won(it.appraisal), won(it.min_price), it.discount, it.yuchal, it.date, it.court, it.case_no, it.risk].join(' | ');
+    }).join('\n');
+    var sys = '당신은 대한민국 법원 부동산 경매 전문 상담 AI입니다. 오늘 날짜는 ' + fmtDate(TODAY) + '입니다.\n' +
+      '- 물건 추천·언급은 반드시 아래 [포털 데이터]에 있는 물건만 근거로 하고, 데이터에 없는 시세·사실은 지어내지 마세요.\n' +
+      '- 물건을 언급할 때는 사건번호(예: 2025타경503878)를 함께 적으세요.\n' +
+      '- 매각기일이 오늘 이전인 물건은 "기일 경과(변경 여부 확인 필요)"라고 알려주세요.\n' +
+      '- 권리 "안전" 표기는 법원 공고 비고란 키워드 기준의 1차 선별일 뿐이므로, 등기부·매각물건명세서 확인을 권고하세요.\n' +
+      '- 법률·세무 내용은 일반 정보로 제공하고 전문가 확인을 권하세요. 한국어로 간결하게, 마크다운 목록을 활용하세요.\n\n' +
+      '[포털 데이터 ' + DATA.length + '건: 순위|점수|시도|시군구|용도|주소|감정가|최저가|할인율|유찰|매각기일|법원|사건번호|권리]\n' + ctx;
+    var userText = q + (local && local.intent !== 'fallback' ? '\n\n[참고: 포털 로컬 엔진 1차 결과]\n' + cut(local.text, 1500) : '');
+    var contents = S.history.slice(-12).concat([{ role: 'user', parts: [{ text: userText }] }]);
+    return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(key), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: sys }] }, contents: contents, generationConfig: { temperature: 0.4 } })
+    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (x) {
+      if (!x.ok || x.j.error) throw new Error((x.j.error && x.j.error.message) || 'API 오류');
+      var parts = (((x.j.candidates || [])[0] || {}).content || {}).parts || [];
+      var txt = parts.map(function (p) { return p.text || ''; }).join('').trim();
+      if (!txt) throw new Error('빈 응답(안전 필터 또는 토큰 제한)');
+      return txt;
+    });
+  }
+
+  function pushHist(q, a) {
+    S.history.push({ role: 'user', parts: [{ text: q }] }, { role: 'model', parts: [{ text: cut(a, 1500) }] });
+    if (S.history.length > 24) S.history = S.history.slice(-24);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 8. 탐색기 연동                                                         */
+  /* ------------------------------------------------------------------ */
+  function openTab(tab) {
+    document.querySelectorAll('.nav-btn').forEach(function (b) { b.classList.toggle('active', (b.getAttribute('onclick') || '').indexOf("'" + tab + "'") >= 0); });
+    document.querySelectorAll('.view-section').forEach(function (s) { s.classList.toggle('active', s.id === 'tab-' + tab); });
+    var sec = document.getElementById('tab-' + tab); if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (window.innerWidth < 520) toggle(false);
+  }
+
+  function applyExplorer() {
+    var c = S.crit; if (!c) return;
+    var set = function (id, v) { var el = document.getElementById(id); if (el) el.value = v; };
+    var region = 'ALL', sidoGroup = { '서울': '수도권', '경기': '수도권', '인천': '수도권', '부산': '영남권', '울산': '영남권', '대구': '영남권', '경상북': '영남권', '경상남': '영남권',
+      '세종': '충청권', '충청북': '충청권', '충청남': '충청권', '광주': '호남권', '전북': '호남권', '전라남': '호남권', '강원': '강원', '제주': '강원' };
+    if (c.cat === 'daejeon' || c.gu.length || c.sido.indexOf('대전') >= 0) region = '대전광역시';
+    else if (c.group.length) region = { '수도권': '수도권', '영남': '영남권', '충청': '충청권', '호남': '호남권', '강원·제주': '강원' }[c.group[0]] || 'ALL';
+    else if (c.sido.length) region = sidoGroup[c.sido[0]] || 'ALL';
+    var usageMap = { '아파트': '아파트', '오피스텔': '오피스텔', '다세대·빌라': '다세대', '상가·근린': '상가', '단독·다가구': '단독' };
+    var disc = 0; [30, 50, 65, 75].forEach(function (v) { if (c.minDisc != null && c.minDisc >= v) disc = v; });
+    var sortMap = { score_desc: 'score_desc', price_asc: 'price_asc', disc_desc: 'discount_desc', date_asc: 'date_asc', appr_desc: 'appraisal_desc' };
+    set('keyword-search', c.gu[0] || c.keywords[0] || '');
+    set('filter-region', region);
+    set('filter-usage', usageMap[c.usageLabel[0]] || 'ALL');
+    set('filter-discount', String(disc));
+    set('sort-order', sortMap[c.sort || ((c.maxPrice != null) ? 'price_asc' : 'score_desc')]);
+    if (typeof filterData === 'function') filterData();
+    openTab('explorer');
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 9. UI                                                                */
+  /* ------------------------------------------------------------------ */
+  if (typeof document === 'undefined') { if (typeof module !== 'undefined') module.exports = { route: route, answerForItem: answerForItem, parseCriteria: parseCriteria, applyCriteria: applyCriteria, S: S }; return; }
+
+  var $ = function (id) { return document.getElementById(id); };
+  var bodyEl = $('cb-body'), inp = $('cb-input'), sendBtn = $('cb-send'), panel = $('cb-panel');
+
+  function chipHtml(ch) {
+    if (typeof ch === 'string') return '<button class="cb-chip" data-ask="' + esc(ch) + '">' + esc(ch) + '</button>';
+    return '<button class="cb-chip" data-act="' + esc(ch.act) + '" data-arg="' + esc(ch.arg || '') + '">' + esc(ch.label) + '</button>';
+  }
+  function addMsg(content, who, chips) {
+    var el = document.createElement('div');
+    el.className = 'cb-msg ' + (who === 'user' ? 'cb-user' : 'cb-bot');
+    if (who === 'user') el.textContent = content;
+    else el.innerHTML = content + (chips && chips.length ? '<div class="cb-actions">' + chips.map(chipHtml).join('') + '</div>' : '');
+    bodyEl.appendChild(el);
+    bodyEl.scrollTop = who === 'user' ? bodyEl.scrollHeight : Math.max(0, el.offsetTop - 12);
+    return el;
+  }
+  function addTyping() { return addMsg('<span class="cb-typing"><span></span><span></span><span></span></span>', 'bot'); }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function setBusy(b) { S.busy = b; sendBtn.disabled = b; }
+
+  function renderSuggest() {
+    $('cb-suggest').innerHTML = ['📡 대법원 실시간 조회', '🏛️ 법원 입찰장 동행', '🚨 위반건축물 진단', '💰 3대 출구전략 비교', '📅 입찰 캘린더', '대전 TOP 5', '유성구 아파트 1억 이하', '소멸주의란?', '입찰 준비물']
+      .map(chipHtml).join('');
+  }
+
+  function send(text) {
+    var q = String(text != null ? text : inp.value).trim();
+    if (!q || S.busy) return;
+    inp.value = ''; grow();
+    addMsg(q, 'user');
+    setBusy(true);
+    var typing = addTyping(), res;
+
+    // 1) 대법원 실시간 조회/리프레쉬 요청 또는 로컬 DB에 없는 사건번호(XXXX타경XXXXXX) 실시간 조회
+    var isLiveCmd = /(대법원\s*실시간|실시간\s*(조회|검색|연동|수집)|경매정보\s*리프레쉬)/.test(q);
+    var caseMatch = q.match(/(20\d{2})\s*타경\s*(\d+)/);
+    var localHasCase = caseMatch ? findItem(q) : null;
+
+    if ((isLiveCmd || (caseMatch && !localHasCase)) && typeof window.liveSearchCourtAuction === 'function') {
+      var searchKw = caseMatch ? (caseMatch[1] + '타경' + caseMatch[2]) : q.replace(/(대법원|실시간|조회|검색|연동|수집|경매정보|리프레쉬|해줘|알려줘)/g, '').trim();
+      window.liveSearchCourtAuction({
+        region: 'ALL',
+        usage: 'ALL',
+        discount: '0',
+        keyword: searchKw
+      }).then(function (liveItems) {
+        typing.remove();
+        if (window.rawData) DATA = window.rawData;
+        if (caseMatch) {
+          var found = findItem(searchKw);
+          if (found) {
+            var itemRes = answerForItem(found, q, false);
+            addMsg('<div class="cb-btitle">📡 대법원(courtauction.go.kr) 실시간 직접 조회 성공!</div>' + itemRes.html, 'bot', itemRes.chips);
+            pushHist(q, itemRes.text);
+            setBusy(false); inp.focus();
+            return;
+          }
+        }
+        if (liveItems && liveItems.length > 0) {
+          S.all = liveItems.slice(0, 20);
+          S.shown = 0;
+          var html = '<div class="cb-btitle">📡 대법원 경매정보(courtauction.go.kr) 실시간 조회 결과 (' + liveItems.length + '건 수신)</div>'
+            + '<p>방금 대법원 서버에서 실시간으로 수신하여 100점 가치평가 모델을 적용한 상위 매물입니다.</p>'
+            + showSlice(PAGE);
+          addMsg(html, 'bot', resultChips());
+          pushHist(q, '대법원 실시간 조회 ' + liveItems.length + '건');
+        } else {
+          var rFallback = route(q);
+          addMsg(rFallback.html, 'bot', rFallback.chips);
+        }
+        setBusy(false); inp.focus();
+      }).catch(function () {
+        typing.remove();
+        var rErr = route(q);
+        addMsg(rErr.html, 'bot', rErr.chips);
+        setBusy(false); inp.focus();
+      });
+      return;
+    }
+
+    try { res = route(q); } catch (err) { res = reply('<p>⚠️ 처리 중 오류: ' + esc(err.message) + '</p>', ['도움말'], null, 'fallback'); }
+    if (aiEnabled() && res.intent === 'fallback') {
+      askAI(q, res).then(function (ans) {
+        typing.remove(); addMsg(md(ans) + '<div class="cb-note">🤖 생성형 AI 답변 · 중요한 판단은 원문 자료로 재확인하세요.</div>', 'bot'); pushHist(q, ans);
+      }).catch(function (err) {
+        typing.remove(); addMsg('<p>⚠️ AI 호출 실패: ' + esc(err.message) + '</p>' + res.html, 'bot', res.chips); pushHist(q, res.text);
+      }).then(function () { setBusy(false); inp.focus(); });
+      return;
+    }
+    sleep(280).then(function () {
+      typing.remove();
+      var chips = res.chips.slice();
+      if (aiEnabled() && res.intent !== 'help') chips.push({ label: '🤖 AI 심층 답변', act: 'ai', arg: q });
+      addMsg(res.html, 'bot', chips); pushHist(q, res.text);
+      setBusy(false); inp.focus();
+    });
+  }
+
+  function forceAI(q) {
+    if (S.busy) return;
+    if (!aiEnabled()) { addMsg('<p>⚙️ 먼저 설정에서 Gemini API 키를 등록하고 AI 모드를 켜 주세요.</p>', 'bot'); return; }
+    setBusy(true);
+    var typing = addTyping(), local = route(q);
+    askAI(q, local).then(function (ans) {
+      typing.remove(); addMsg(md(ans) + '<div class="cb-note">🤖 생성형 AI 답변 · 중요한 판단은 원문 자료로 재확인하세요.</div>', 'bot'); pushHist(q, ans);
+    }).catch(function (err) { typing.remove(); addMsg('<p>⚠️ AI 호출 실패: ' + esc(err.message) + '</p>', 'bot'); })
+      .then(function () { setBusy(false); });
+  }
+
+  function toggle(force) {
+    var open = force != null ? force : !panel.classList.contains('open');
+    panel.classList.toggle('open', open);
+    var dot = document.querySelector('#cb-fab .cb-dot'); if (dot && open) dot.remove();
+    if (open) setTimeout(function () { inp.focus(); }, 50);
+  }
+  function toggleMaximize(force) {
+    if (!panel) return;
+    var next = force != null ? force : !panel.classList.contains('maximized');
+    panel.classList.toggle('maximized', next);
+    var btn = $('cb-max-btn');
+    if (btn) {
+      btn.innerHTML = next ? '⤡ 이전크기' : '⤢ 최대화';
+      btn.title = next ? '이전 크기로 복원' : '챗봇창 최대화';
+      btn.setAttribute('aria-label', btn.title);
+    }
+  }
+  function updateMode() {
+    var on = aiEnabled(), el = $('cb-mode-label');
+    el.textContent = on ? 'AI 모드' : '로컬 모드'; el.classList.toggle('ai', on);
+  }
+  function loadSettings() {
+    $('cb-key').value = ls('cb_key') || '';
+    $('cb-model').value = ls('cb_model') || 'gemini-2.5-flash';
+    $('cb-use-ai').checked = ls('cb_use_ai') === '1';
+    updateMode();
+  }
+  function saveSettings() {
+    var k = $('cb-key').value.trim(), m = $('cb-model').value.trim() || 'gemini-2.5-flash', on = $('cb-use-ai').checked;
+    ls('cb_key', k || null); ls('cb_model', m); ls('cb_use_ai', on ? '1' : '0');
+    updateMode(); $('cb-settings').classList.remove('open');
+    addMsg(aiEnabled() ? '<p>✅ AI 모드가 켜졌습니다 (' + esc(m) + '). 로컬 엔진이 이해하지 못한 질문은 AI가 답하고, 다른 답변에는 "🤖 AI 심층 답변" 버튼이 표시됩니다.</p>'
+      : (on && !k ? '<p>⚠️ API 키가 없어 로컬 모드로 동작합니다.</p>' : '<p>💾 저장했습니다. 현재 로컬 모드로 동작합니다.</p>'), 'bot');
+  }
+  function resetChat() {
+    bodyEl.innerHTML = ''; S.all = []; S.shown = 0; S.crit = null; S.history = [];
+    var h = helpReply(); addMsg(h.html, 'bot', h.chips);
+  }
+  function grow() { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 90) + 'px'; }
+
+  function doAct(act, arg) {
+    switch (act) {
+      case 'close': toggle(false); break;
+      case 'maximize': toggleMaximize(); break;
+      case 'theme': if (typeof toggleTheme === 'function') toggleTheme(); break;
+      case 'settings': $('cb-settings').classList.toggle('open'); break;
+      case 'reset': resetChat(); break;
+      case 'save-settings': saveSettings(); break;
+      case 'clear-key': ls('cb_key', null); ls('cb_use_ai', '0'); loadSettings(); addMsg('<p>🗑 API 키를 삭제했습니다.</p>', 'bot'); break;
+      case 'more':
+        if (S.shown < S.all.length) addMsg(showSlice(PAGE), 'bot', resultChips());
+        break;
+      case 'explorer': applyExplorer(); break;
+      case 'tab': openTab(arg); break;
+      case 'open': if (typeof openDetail === 'function') openDetail(arg); break;
+      case 'map': if (typeof openMapModalById === 'function') openMapModalById(arg); break;
+      case 'courtmap': if (typeof openCourtMapByName === 'function') openCourtMapByName(arg); break;
+      case 'court': window.open('https://www.courtauction.go.kr', '_blank'); break;
+      case 'ai': forceAI(arg); break;
+    }
+  }
+
+  $('cb-fab').addEventListener('click', function () { toggle(); });
+  sendBtn.addEventListener('click', function () { send(); });
+  inp.addEventListener('input', grow);
+  inp.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send(); }
+  });
+  panel.addEventListener('click', function (e) {
+    var a = e.target.closest('[data-ask]'); if (a) { send(a.getAttribute('data-ask')); return; }
+    var o = e.target.closest('[data-open]'); if (o) { if (typeof openDetail === 'function') openDetail(o.getAttribute('data-open')); return; }
+    var b = e.target.closest('[data-act]'); if (b) doAct(b.getAttribute('data-act'), b.getAttribute('data-arg'));
+  });
+  panel.addEventListener('dblclick', function (e) {
+    if (e.target.closest('.cb-head') && !e.target.closest('button')) toggleMaximize();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && panel.classList.contains('open') && !document.querySelector('.modal-backdrop.show')) toggle(false);
+  });
+
+  loadSettings(); renderSuggest(); resetChat();
+  window.cbAsk = function (q) { toggle(true); send(q); };
+  window.cbSetFocusItem = function (id) {
+    var it = DATA.filter(function (d) { return d.id === id; })[0];
+    if (it) S.focusItem = it;
+  };
+  window.cbOpenFromModal = function (id, q) {
+    var it = DATA.filter(function (d) { return d.id === id; })[0] || S.focusItem;
+    if (typeof closeModal === 'function') closeModal();
+    toggle(true);
+    if (it) {
+      S.focusItem = it;
+      send(q || (it.rank + ' 자세히'));
+    } else if (q) {
+      send(q);
+    }
+  };
+  var modalLogsById = {};
+
+  window.cbInitModalChat = function (id, forceReset) {
+    var it = DATA.filter(function (d) { return d.id === id; })[0] || S.focusItem;
+    var logEl = document.getElementById('modal-chat-log');
+    if (!it || !logEl) return;
+    S.focusItem = it;
+    if (!forceReset && modalLogsById[it.id]) {
+      logEl.innerHTML = modalLogsById[it.id];
+      logEl.scrollTop = logEl.scrollHeight;
+      return;
+    }
+    var welcomeEl = document.createElement('div');
+    welcomeEl.className = 'cb-msg cb-bot';
+    welcomeEl.innerHTML = buildModalWelcomeHtml(it);
+    logEl.innerHTML = '';
+    logEl.appendChild(welcomeEl);
+    modalLogsById[it.id] = logEl.innerHTML;
+  };
+
+  window.cbToggleModalChatExpand = function () {
+    var winEl = document.getElementById('modal-chat-window');
+    var btnEl = document.getElementById('modal-chat-expand-btn');
+    if (!winEl) return;
+    var exp = winEl.classList.toggle('expanded');
+    if (btnEl) {
+      btnEl.textContent = exp ? '⤡ 대화창 축소' : '⤢ 대화창 확대';
+    }
+    var logEl = document.getElementById('modal-chat-log');
+    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  window.cbAskInModal = function (id, q) {
+    var it = DATA.filter(function (d) { return d.id === id; })[0] || S.focusItem;
+    var inputEl = document.getElementById('modal-chat-input');
+    var logEl = document.getElementById('modal-chat-log');
+    var query = String(q != null ? q : (inputEl ? inputEl.value : '')).trim();
+    if (!query || !logEl) return;
+    if (inputEl && q == null) inputEl.value = '';
+    logEl.classList.add('has-msg');
+
+    var uEl = document.createElement('div');
+    uEl.className = 'cb-msg cb-user';
+    uEl.textContent = query;
+    logEl.appendChild(uEl);
+
+    var res = it ? answerForItem(it, query, false) : route(query);
+    if (aiEnabled() && it) {
+      var waitEl = document.createElement('div');
+      waitEl.className = 'cb-msg cb-bot';
+      waitEl.innerHTML = '<span class="cb-typing"><span></span><span></span><span></span></span>';
+      logEl.appendChild(waitEl);
+      logEl.scrollTop = logEl.scrollHeight;
+      var promptWithItem = '[오직 다음 단일 경매물건에 대해서만 집중적으로 답변하세요: ' + itemText(it) + '] 사용자 질문: ' + query;
+      askAI(promptWithItem, res).then(function (ans) {
+        waitEl.innerHTML = md(ans) + '<div class="cb-note">🤖 생성형 AI 답변 · 중요한 판단은 원문 자료로 재확인하세요.</div>';
+        pushHist(promptWithItem, ans);
+        modalLogsById[it.id] = logEl.innerHTML;
+        logEl.scrollTop = logEl.scrollHeight;
+      }).catch(function (err) {
+        waitEl.innerHTML = '<p>⚠️ AI 호출 실패: ' + esc(err.message) + '</p>' + res.html;
+        modalLogsById[it.id] = logEl.innerHTML;
+      });
+      return;
+    }
+
+    var bEl = document.createElement('div');
+    bEl.className = 'cb-msg cb-bot';
+    var chipsHtml = (res.chips || []).map(function (ch) {
+      if (typeof ch === 'string') {
+        return '<button type="button" class="cb-chip" onclick="cbAskInModal(\'' + esc(it ? it.id : '') + '\', \'' + esc(ch) + '\')">' + esc(ch) + '</button>';
+      }
+      if (ch.act === 'open' && ch.arg) {
+        return '<button type="button" class="cb-chip" onclick="openDetail(\'' + esc(ch.arg) + '\')">' + esc(ch.label) + '</button>';
+      }
+      return '';
+    }).join('');
+    bEl.innerHTML = res.html + (chipsHtml ? '<div class="cb-actions">' + chipsHtml + '</div>' : '');
+    logEl.appendChild(bEl);
+    if (it) modalLogsById[it.id] = logEl.innerHTML;
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  window.cbReloadItems = function (newData) {
+    if (Array.isArray(newData)) {
+      DATA = newData;
+    }
+  };
+})();
+</script>
+<!-- ===== /경매 AI 상담 챗봇 위젯 ===== -->
