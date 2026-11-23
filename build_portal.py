@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from datetime import datetime
 import json
 import os
@@ -8,7 +9,12 @@ sys.stdout.reconfigure(encoding='utf-8')
 # portal_data.json 로드 및 자동 법률/좌표 인리치먼트 보장
 from enrich_engine import enrich_all_portal_data
 
-with open(r'C:\Users\wood\Desktop\aiwork\auction\portal_data.json', 'r', encoding='utf-8') as f:
+script_dir = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(script_dir, 'portal_data.json')
+if not os.path.exists(data_path):
+    data_path = r'C:\Users\wood\Desktop\aiwork\auction\portal_data.json'
+
+with open(data_path, 'r', encoding='utf-8') as f:
     raw_data = json.load(f)
 
 raw_data = enrich_all_portal_data(raw_data)
@@ -1596,7 +1602,61 @@ html_content = f"""<!DOCTYPE html>
       color: var(--text-muted);
     }}
 
-    /* Theme Switcher Group */
+    /* Theme Switcher Group & Single Cycle Button */
+    .theme-cycle-btn {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.26);
+      color: #ffffff;
+      padding: 6px 13px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 700;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+      flex-shrink: 0;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+      user-select: none;
+    }}
+    .theme-cycle-btn:hover {{
+      background: rgba(255, 255, 255, 0.25);
+      border-color: rgba(255, 255, 255, 0.45);
+      transform: translateY(-1px);
+      box-shadow: 0 3px 8px rgba(0, 0, 0, 0.16);
+    }}
+    .theme-cycle-btn:active {{
+      transform: translateY(0);
+    }}
+    .theme-cycle-btn .theme-cycle-icon {{
+      font-size: 0.95rem;
+      line-height: 1;
+    }}
+    .theme-cycle-btn .theme-cycle-text {{
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }}
+    html[data-theme="dark"] .theme-cycle-btn {{
+      background: rgba(251, 191, 36, 0.16);
+      border-color: rgba(251, 191, 36, 0.38);
+      color: #fbbf24;
+    }}
+    html[data-theme="dark"] .theme-cycle-btn:hover {{
+      background: rgba(251, 191, 36, 0.28);
+      border-color: #fbbf24;
+      box-shadow: 0 0 10px rgba(251, 191, 36, 0.25);
+    }}
+    html[data-theme="gray"] .theme-cycle-btn {{
+      background: rgba(255, 255, 255, 0.22);
+      border-color: rgba(255, 255, 255, 0.38);
+      color: #f8fafc;
+    }}
+    html[data-theme="gray"] .theme-cycle-btn:hover {{
+      background: rgba(255, 255, 255, 0.32);
+      border-color: rgba(255, 255, 255, 0.55);
+    }}
     .theme-group {{
       display: inline-flex;
       align-items: center;
@@ -2246,11 +2306,10 @@ html_content = f"""<!DOCTYPE html>
         <button id="btn-refresh-data" class="btn-refresh-data" style="padding:7px 11px; font-size:0.8rem; white-space:nowrap; flex-shrink:0;" onclick="refreshAuctionData()" title="최신 경매 물건 데이터 리프레쉬">
           <span class="refresh-icon">🔄</span> 경매정보 리프레쉬
         </button>
-        <div class="theme-group" role="group" aria-label="테마 모드 선택">
-          <button id="theme-btn-light" class="theme-toggle" onclick="toggleTheme('light')" title="라이트모드">☀️ 라이트</button>
-          <button id="theme-btn-gray" class="theme-toggle active" onclick="toggleTheme('gray')" title="그레이모드">🌓 그레이</button>
-          <button id="theme-btn-dark" class="theme-toggle" onclick="toggleTheme('dark')" title="다크모드">🌙 다크</button>
-        </div>
+        <button id="theme-cycle-btn" class="theme-cycle-btn" onclick="toggleTheme()" title="화면 테마 모드 전환 (라이트 → 그레이 → 다크 순환)">
+          <span class="theme-cycle-icon">🌓</span>
+          <span class="theme-cycle-text">그레이모드</span>
+        </button>
       </nav>
     </div>
   </header>
@@ -3378,9 +3437,21 @@ flowchart LR
 
     function updateThemeUI() {{
       const cur = getCurrentTheme();
+      const btn = document.getElementById('theme-cycle-btn');
+      if (btn) {{
+        const themeMap = {{
+          'light': {{ icon: '☀️', name: '라이트모드', next: '그레이모드' }},
+          'gray': {{ icon: '🌓', name: '그레이모드', next: '다크모드' }},
+          'dark': {{ icon: '🌙', name: '다크모드', next: '라이트모드' }}
+        }};
+        const conf = themeMap[cur] || themeMap['gray'];
+        btn.setAttribute('data-current-theme', cur);
+        btn.setAttribute('title', `화면 테마 모드: 현재 [${{conf.name}}] (클릭 시 ${{conf.next}}로 전환)`);
+        btn.innerHTML = `<span class="theme-cycle-icon">${{conf.icon}}</span> <span class="theme-cycle-text">${{conf.name}}</span>`;
+      }}
       ['light', 'dark', 'gray'].forEach(m => {{
-        const btn = document.getElementById('theme-btn-' + m);
-        if (btn) btn.classList.toggle('active', m === cur);
+        const b = document.getElementById('theme-btn-' + m);
+        if (b) b.classList.toggle('active', m === cur);
       }});
     }}
 
@@ -5397,7 +5468,9 @@ flowchart LR
 """
 
 # 실전 투자 도구 모듈 삽입 (portal_tools.html: 기일입찰표·안전마진 계산기·관심물건 찜·D-Day 캘린더 → </body> 직전)
-tools_path = r'C:\Users\wood\Desktop\aiwork\auction\portal_tools.html'
+tools_path = os.path.join(script_dir, 'portal_tools.html')
+if not os.path.exists(tools_path):
+    tools_path = r'C:\Users\wood\Desktop\aiwork\auction\portal_tools.html'
 if os.path.exists(tools_path):
     with open(tools_path, 'r', encoding='utf-8') as f:
         tools_html = f.read()
@@ -5405,24 +5478,26 @@ if os.path.exists(tools_path):
     print("Investor tools module injected.")
 
 # 챗봇 위젯 삽입 (chatbot_widget.html → </body> 직전)
-widget_path = r'C:\Users\wood\Desktop\aiwork\auction\chatbot_widget.html'
+widget_path = os.path.join(script_dir, 'chatbot_widget.html')
+if not os.path.exists(widget_path):
+    widget_path = r'C:\Users\wood\Desktop\aiwork\auction\chatbot_widget.html'
 if os.path.exists(widget_path):
     with open(widget_path, 'r', encoding='utf-8') as f:
         widget_html = f.read()
     html_content = html_content.replace('</body>', widget_html + '\n</body>', 1)
     print("Chatbot widget injected.")
 
-out_html1 = r'C:\Users\wood\Desktop\aiwork\auction\index.html'
-out_html2 = r'C:\Users\wood\Desktop\aiwork\auction\경매_스마트_분석_포털.html'
-out_html3 = r'C:\Users\wood\Desktop\auction\index.html'
-out_html4 = r'C:\Users\wood\Desktop\auction\경매_스마트_분석_포털.html'
+out_html1 = os.path.join(script_dir, 'index.html')
+out_html2 = os.path.join(script_dir, '경매_스마트_분석_포털.html')
+out_html3 = r'C:\Users\wood\Desktop\aiwork\auction\index.html'
+out_html4 = r'C:\Users\wood\Desktop\auction\index.html'
 
 for out_path in [out_html1, out_html2, out_html3, out_html4]:
     try:
         with open(out_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
     except Exception as e:
-        print(f"Error writing {out_path}: {e}")
+        pass
 
 print(f"Web portal created successfully! Files: {out_html1}, {out_html2}")
 

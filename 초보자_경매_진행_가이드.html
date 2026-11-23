@@ -284,9 +284,9 @@
     <div class="top-bar">
       <a href="경매_스마트_분석_포털.html" class="btn-portal">⬅ 경매 스마트 분석 포털로 돌아가기</a>
       <div class="theme-btn-group">
-        <button type="button" class="theme-mode-btn" id="btn-theme-light" onclick="setGuideTheme('light')">☀️ 라이트모드</button>
-        <button type="button" class="theme-mode-btn" id="btn-theme-gray" onclick="setGuideTheme('gray')">☁️ 그레이모드</button>
-        <button type="button" class="theme-mode-btn" id="btn-theme-dark" onclick="setGuideTheme('dark')">🌙 다크모드</button>
+        <button type="button" class="theme-mode-btn theme-cycle-btn" id="theme-cycle-btn" onclick="toggleGuideTheme()" title="화면 테마 전환 (라이트 → 그레이 → 다크 순환)">
+          <span class="theme-cycle-icon">☀️</span> <span class="theme-cycle-text">라이트모드</span>
+        </button>
       </div>
     </div>
 
@@ -470,15 +470,33 @@
   </div>
 
   <script>
+    function toggleGuideTheme() {
+      var cur = document.documentElement.getAttribute('data-theme') || 'light';
+      var order = ['light', 'gray', 'dark'];
+      var next = order[(order.indexOf(cur) + 1) % order.length];
+      setGuideTheme(next);
+    }
+
     function setGuideTheme(mode) {
       document.documentElement.setAttribute('data-theme', mode);
       try {
         localStorage.setItem('auction_theme', mode);
         localStorage.setItem('report_theme', mode);
       } catch (e) {}
+      var btn = document.getElementById('theme-cycle-btn');
+      if (btn) {
+        var themeMap = {
+          'light': { icon: '☀️', name: '라이트모드', next: '그레이모드' },
+          'gray': { icon: '🌓', name: '그레이모드', next: '다크모드' },
+          'dark': { icon: '🌙', name: '다크모드', next: '라이트모드' }
+        };
+        var conf = themeMap[mode] || themeMap['light'];
+        btn.setAttribute('title', '화면 테마 모드: 현재 [' + conf.name + '] (클릭 시 ' + conf.next + '로 전환)');
+        btn.innerHTML = '<span class="theme-cycle-icon">' + conf.icon + '</span> <span class="theme-cycle-text">' + conf.name + '</span>';
+      }
       ['light', 'gray', 'dark'].forEach(function(m) {
-        var btn = document.getElementById('btn-theme-' + m);
-        if (btn) btn.classList.toggle('active', m === mode);
+        var b = document.getElementById('btn-theme-' + m);
+        if (b) b.classList.toggle('active', m === mode);
       });
     }
     function updateChkProgress() {
